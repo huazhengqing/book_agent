@@ -1,0 +1,43 @@
+
+
+
+
+
+
+
+在项目中引入了mem0，所有生成的信息都会存入mem0中，包括向量和图数据库。
+mem0 的提示词在 story_zh 中的 mem.py 中：MEM_STORY_FACT  MEM_STORY_UPDATE
+mem0 的存入在  mem0_wrapper.py 中的 story_add 中，存入内容为4种：小说正文，分解结果，设计结果，任务更新
+mem0 的检索在：  mem0_wrapper.py 中的  get_story_outer_graph_dependent   get_story_content  get_story_full_plan 
+
+mem0系统架构：
+├── MEM_STORY_FACT (提取提示词)
+│   ├── 多格式内容识别 (小说正文/JSON/Markdown/表格)
+│   ├── 完整性保护策略 (层级结构/表格数据/关联信息)
+│   └── 自然语言转换 (便于语义搜索)
+├── MEM_STORY_UPDATE (更新提示词)
+│   ├── 智能更新判断 (ADD/UPDATE/DELETE/NONE)
+│   ├── 完整性优先原则
+│   └── 逻辑一致性维护
+└── get_story_outer_graph_dependent (检索方法)
+    ├── 基于任务目标的语义查询
+    ├── 简化的检索逻辑
+    └── 相信mem0的核心搜索能力
+
+设计结果通常包含：
+Markdown表格：角色关系表、时间线表、设定对比表
+Mermaid图表：情节流程图、角色关系图、世界观结构图
+层次化内容：多级标题、嵌套列表、完整段落
+关联性内容：前后呼应的设计思路、逻辑链条
+
+真实需求
+存储: 将设计结果等内容存入mem0，供后续任务参考
+检索: 根据任务需求，找到相关的历史设计信息
+
+请你分析当前mem0相关的问题，
+当前问题：检索出的内容都是一句一句的零碎的东西，很多结构化的信息都看不到了，这个明显不正常，项目可能无法良好的运行了。
+
+
+
+
+
