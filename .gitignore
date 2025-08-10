@@ -12,7 +12,7 @@ tmp/
 docs/
 
 
-api_key.*
+api_key.env
 config.ini
 secret.key
 
