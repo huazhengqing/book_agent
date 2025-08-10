@@ -1,8 +1,7 @@
 #!/bin/bash
 
-echo "Setting up WriteHERE environment..."
 
-# Check if Python is available
+
 if command -v python3 >/dev/null 2>&1; then
     PYTHON="python3"
 elif command -v python >/dev/null 2>&1; then
@@ -12,7 +11,7 @@ else
     exit 1
 fi
 
-# Check Python version
+
 $PYTHON -c "import sys; sys.exit(0 if sys.version_info >= (3, 6) else 1)" || {
     echo "Error: Python 3.6+ is required. You have $($PYTHON --version)"
     exit 1
@@ -21,14 +20,14 @@ $PYTHON -c "import sys; sys.exit(0 if sys.version_info >= (3, 6) else 1)" || {
 echo "Using $($PYTHON --version)"
 echo
 
-# Clean up any previous environment
+
 # if [ -d "venv" ]; then
 #     echo "Removing previous virtual environment..."
 #     rm -rf venv
 # fi
 
 echo "Creating new virtual environment..."
-$PYTHON -m venv venv
+# $PYTHON -m venv venv
 
 if [ ! -d "venv" ]; then
     echo "Error: Failed to create virtual environment."
@@ -46,6 +45,7 @@ pip install --upgrade mem0ai[graph] chromadb langchain-memgraph openai neo4j lit
 echo "Installing all project dependencies..."
 pip install -r requirements.txt
 
+
 echo "Installing main package in development mode..."
 pip install -v -e .
 
@@ -58,7 +58,6 @@ pip install -v -e .
 
 echo
 echo "Environment setup complete! You can now run the application with:"
-# echo "./start.sh"
 echo
 echo "Or activate the environment manually with:"
 echo "source venv/bin/activate"

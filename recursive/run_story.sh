@@ -5,14 +5,14 @@ MODEL=openai/deepseek-ai/DeepSeek-R1-0528
 # MODEL=openrouter/deepseek/deepseek-r1-0528:free
 
 
-task_input_file=../test_data/story.jsonl
-output_folder=../test_data/story/
+task_input_file=../test/story.jsonl
+output_folder=../test/story/
 mkdir -p ${output_folder}
 task_output_file=${output_folder}/output.jsonl
 done_file=${output_folder}/done.txt
 
 
-rm -rf ../test_data/story/爽文小说2/*
+rm -rf ../test/story/爽文小说2/*
 rm -rf ../recursive/.mem0
 rm -rf ../recursive/run_story.log
 
