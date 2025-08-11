@@ -51,7 +51,7 @@ class StoryWriterZh(PromptTemplate):
 """.strip()
 
 
-        content_template = f"""
+        content_template = """
 # 当前写作任务
 <target_task>
 {to_run_task}

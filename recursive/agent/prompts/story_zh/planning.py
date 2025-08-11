@@ -54,7 +54,7 @@ class StoryPlanningZh(PromptTemplate):
 </result>
 """.strip()
 
-        content_template = f"""
+        content_template = """
 # 创作目标与进度
 ## 终极目标
 <root_question>

@@ -23,19 +23,13 @@ import os
 
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(os.path.dirname(current_dir))
-
 recursive_env_path = os.path.join(os.path.dirname(current_dir), 'api_key.env')
 if os.path.exists(recursive_env_path):
     load_dotenv(dotenv_path=recursive_env_path)
 else:
     load_dotenv(dotenv_path='api_key.env')
 
-task_env_file = os.environ.get('TASK_ENV_FILE')
-if task_env_file and os.path.exists(task_env_file):
-    load_dotenv(dotenv_path=task_env_file, override=True)
 
-    
 class GraphRunEngine:
     """
     """

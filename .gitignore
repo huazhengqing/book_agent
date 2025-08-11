@@ -19,6 +19,7 @@ secret.key
 
 build/*
 !build/.gitkeep
+*.pyc
 
 output.jsonl
 done.txt

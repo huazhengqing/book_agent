@@ -154,8 +154,7 @@ def get_llm_output(node, agent, memory, agent_type, overwrite_cache=False, *args
         elif agent_type == "final_aggregate":
             content = llm_result["result"]
             content_type = "design_result"
-
-    if content and content_type
+    if content and content_type:
         memory.mem0.add(content, content_type, node.task_info)
         
         

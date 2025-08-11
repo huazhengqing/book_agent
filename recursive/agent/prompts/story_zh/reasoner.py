@@ -21,7 +21,7 @@ DESIGN_PRINCIPLES = """
 
 ## 平台合规
 - 内容健康向上，避免敏感内容，符合网络小说平台规范
-"""
+""".strip()
 
 
 @prompt_register.register_module()
@@ -51,7 +51,7 @@ class StoryReasonerZh(PromptTemplate):
 </result>
 """.strip()
 
-        content_template = f"""
+        content_template = """
 # 创作目标与进度
 ## 终极目标
 <root_question>
@@ -128,7 +128,7 @@ class StoryReasonerAggregateZh(PromptTemplate):
 </result>
 """.strip()
 
-        content_template = f"""
+        content_template = """
 # 创作目标与进度
 ## 终极目标
 <root_question>

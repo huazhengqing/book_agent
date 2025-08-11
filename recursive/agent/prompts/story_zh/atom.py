@@ -26,7 +26,7 @@ ATOMIC_JUDGMENT_LOGIC = """
 """.strip()
 
 
-CONTENT_TEMPLATE = f"""
+CONTENT_TEMPLATE = """
 # 创作目标与进度
 ## 终极目标
 <root_question>

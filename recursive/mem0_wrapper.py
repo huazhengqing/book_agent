@@ -13,9 +13,6 @@ import time
 from recursive.agent.prompts.story_zh.mem import (
     MEM_STORY_FACT,
     MEM_STORY_UPDATE
-    # MEM_STORY_ANSWER,
-    # MEM_STORY_PLAN,
-    # MEM_STORY_CONTENT
 )
 
 

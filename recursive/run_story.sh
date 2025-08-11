@@ -12,10 +12,10 @@ task_output_file=${output_folder}/output.jsonl
 done_file=${output_folder}/done.txt
 
 
-rm -rf ../test/story/爽文小说2/*
-rm -rf ../recursive/.mem0
-rm -rf ../recursive/run_story.log
 
+rm -rf ./.mem0
+rm -rf ./run_story.log
+rm -rf ../test/story/爽文小说2/*
 
 rm -rf ../.litellm_cache
 rm -rf ../.mem0
