@@ -22,7 +22,7 @@ class Mem0:
         self.writing_mode = config.get("writing_mode", "story")
         self.root_node = root_node
 
-        self.config = {
+        self.mem0_config = {
             # "vector_store": {
             #     "provider": "chroma",
             #     "config": {
@@ -53,21 +53,31 @@ class Mem0:
             #         # "on_disk": True
             #     }
             # },
-            "llm": {
-                "provider": "openai",
-                "config": {
-                    "temperature": 0.0,
-                    "max_tokens": 131072
-                }
-            },
             # "llm": {
-            #     "provider": "litellm",
+            #     "provider": "openai",
             #     "config": {
-            #         "model": os.getenv("fast_model"),
+            #         "model": "deepseek-ai/DeepSeek-V3",
             #         "temperature": 0.0,
             #         "max_tokens": 131072
             #     }
             # },
+            "llm": {
+                "provider": "litellm",
+                "config": {
+                    "model": os.getenv("fast_model"),
+                    "temperature": 0.0,
+                    "max_tokens": 131072,
+                    "caching": True,
+                    "max_completion_tokens": 131072,
+                    "timeout": 300,
+                    "num_retries": 2,
+                    "respect_retry_after": True,
+                    "fallbacks": [
+                        "openrouter/deepseek/deepseek-chat-v3-0324:free",
+                        "openai/deepseek-ai/DeepSeek-V3"
+                        ]
+                }
+            },
             "embedder": {
                 "provider": "openai",
                 "config": {
@@ -93,29 +103,33 @@ class Mem0:
         #     self.config["custom_fact_extraction_prompt"] = MEM_STORY_FACT
         #     self.config["custom_update_memory_prompt"] = MEM_STORY_UPDATE
 
-        temp = os.getenv("OPENROUTER_API_KEY")
-        if self.config["llm"]["provider"] == "openai":
-            # os.environ["OPENROUTER_API_KEY"] = ""
-            if os.environ.get("OPENROUTER_API_KEY"):
-                self.config["llm"]["config"] = {
-                    "model": "deepseek/deepseek-chat-v3-0324:free",
-                    "temperature": 0.0,
-                    "max_tokens": 131072
-                }
-            else:
-                self.config["llm"]["config"] = {
-                    "model": "deepseek-ai/DeepSeek-V3",
-                    "temperature": 0.0,
-                    "max_tokens": 131072
-                }
+        # temp = os.getenv("OPENROUTER_API_KEY")
+        # if self.mem0_config["llm"]["provider"] == "openai":
+        #     # os.environ["OPENROUTER_API_KEY"] = ""
+        #     if os.environ.get("OPENROUTER_API_KEY"):
+        #         self.mem0_config["llm"]["config"].update({
+        #             "model": "deepseek/deepseek-chat-v3-0324:free"
+        #         })
+        #     else:
+        #         self.mem0_config["llm"]["config"].update({
+        #             "model": "deepseek-ai/DeepSeek-V3"
+        #         })
 
-        self.client = Mem0Memory.from_config(config_dict=self.config)
-        os.environ["OPENROUTER_API_KEY"] = temp
+        
+        self.client = Mem0Memory.from_config(config_dict=self.mem0_config)
+        
+        # os.environ["OPENROUTER_API_KEY"] = temp
         
         self.user_id_pre = f"{self.writing_mode}_{self.root_node.hashkey}"
 
         # self.llm_client = LiteLLMProxy()
         # self.fast_model = os.environ.get("fast_model")
+
+
+
+
+    
+    
     
 
     def add(self, content, content_type, task_info):
@@ -140,139 +154,32 @@ class Mem0:
 
 
     def story_add(self, content, content_type, task_info):
-        task_id = task_info.get("id", "")
-        task_type = task_info.get("task_type", "")
-        task_goal = task_info.get("goal", "")
-        dependency = task_info.get("dependency", [])
+        task_id = task_info.get("id")
+        if not task_id:
+            return
+        task_type = task_info.get("task_type")
+        task_goal = task_info.get("goal")
+        dependency = task_info.get("dependency")
         dependency_str = json.dumps(dependency, ensure_ascii=False)
         task_str = json.dumps(task_info, ensure_ascii=False)
+
 
         if content_type == "story_content":
             category = "story"
         elif content_type in ["task_update", "task_decomposition", "design_result"]:
             category = "design"
-        else:
-            return
-        
-        # 预处理内容，对于复杂的设计结果进行分块处理
-        if content_type == "design_result" and len(content) > 3000:
-            self._add_complex_design_content(content, task_info, category)
-        else:
-            # 标准处理流程
-            mem0_content = self._format_content_for_storage(content, content_type, task_str)
-            self._add_single_content(mem0_content, task_info, category, content_type, content)
 
-    def _format_content_for_storage(self, content, content_type, task_str):
-        """格式化内容用于存储"""
+
+        mem0_content = ""
         if content_type == "story_content":
-            return content
+            mem0_content = content
         elif content_type == "task_decomposition":
-            return f"""任务：{task_str}\n规划分解结果：{content}"""
+            mem0_content = f"""任务：{task_str}\n规划分解结果：{content}"""
         elif content_type == "design_result":
-            return f"""任务：{task_str}\n设计结果：{content}"""
+            mem0_content = f"""任务：{task_str}\n设计结果：{content}"""
         elif content_type == "task_update":
-            return f"""任务：{task_str}\n更新任务目标：{content}"""
-        return content
+            mem0_content = f"""任务：{task_str}\n更新任务目标：{content}"""
 
-    def _add_complex_design_content(self, content, task_info, category):
-        """处理复杂的设计内容，分块存储"""
-        task_id = task_info.get("id", "")
-        task_str = json.dumps(task_info, ensure_ascii=False)
-        
-        # 按主要结构分块
-        chunks = self._split_design_content(content)
-        
-        for i, chunk in enumerate(chunks):
-            if len(chunk.strip()) < 50:  # 跳过过短的块
-                continue
-                
-            # 为每个块创建描述性标题
-            chunk_title = self._extract_chunk_title(chunk)
-            formatted_content = f"""任务：{task_str}\n设计结果片段[{chunk_title}]：{chunk}"""
-            
-            # 添加块索引到元数据
-            chunk_metadata = {
-                "chunk_index": i,
-                "chunk_title": chunk_title,
-                "total_chunks": len(chunks),
-                "is_chunk": True
-            }
-            
-            self._add_single_content(formatted_content, task_info, category, "design_result", chunk, chunk_metadata)
-
-    def _split_design_content(self, content):
-        """将复杂设计内容分割成有意义的块"""
-        chunks = []
-        
-        # 按markdown标题分割
-        import re
-        sections = re.split(r'\n(?=#{1,4}\s)', content)
-        
-        if len(sections) > 1:
-            # 有明确的标题结构
-            for section in sections:
-                if section.strip():
-                    chunks.append(section.strip())
-        else:
-            # 按表格分割
-            table_pattern = r'\|[^|]+\|[^|]+\|'
-            if re.search(table_pattern, content):
-                parts = re.split(r'\n(?=\|)', content)
-                current_chunk = ""
-                for part in parts:
-                    if len(current_chunk + part) > 1500:
-                        if current_chunk:
-                            chunks.append(current_chunk.strip())
-                        current_chunk = part
-                    else:
-                        current_chunk += "\n" + part
-                if current_chunk:
-                    chunks.append(current_chunk.strip())
-            else:
-                # 按段落分割
-                paragraphs = content.split('\n\n')
-                current_chunk = ""
-                for para in paragraphs:
-                    if len(current_chunk + para) > 1500:
-                        if current_chunk:
-                            chunks.append(current_chunk.strip())
-                        current_chunk = para
-                    else:
-                        current_chunk += "\n\n" + para
-                if current_chunk:
-                    chunks.append(current_chunk.strip())
-        
-        return [chunk for chunk in chunks if chunk.strip()]
-
-    def _extract_chunk_title(self, chunk):
-        """从内容块中提取描述性标题"""
-        import re
-        
-        # 尝试提取markdown标题
-        title_match = re.search(r'^#{1,4}\s*(.+)', chunk, re.MULTILINE)
-        if title_match:
-            return title_match.group(1).strip()
-        
-        # 尝试提取表格主题
-        if '|' in chunk:
-            lines = chunk.split('\n')
-            for line in lines:
-                if '|' in line and not line.strip().startswith('|---'):
-                    return "表格数据"
-        
-        # 提取关键词
-        keywords = re.findall(r'[\u4e00-\u9fff]{2,6}(?=设计|规划|分析|框架|方案)', chunk)
-        if keywords:
-            return keywords[0] + "设计"
-        
-        # 默认标题
-        return "设计内容"
-
-    def _add_single_content(self, mem0_content, task_info, category, content_type, original_content, extra_metadata=None):
-        """添加单个内容到mem0"""
-        task_id = task_info.get("id", "")
-        dependency = task_info.get("dependency", [])
-        dependency_str = json.dumps(dependency, ensure_ascii=False)
         
         parent_task_id = ".".join(task_id.split(".")[:-1]) if task_id and "." in task_id else ""
         mem_metadata = {
@@ -284,13 +191,10 @@ class Mem0:
             "parent_task_id": parent_task_id,
             "dependency": dependency_str,
             "dependency_count": len(dependency),
-            "content_length": len(original_content),
-            "content_hash": hash(original_content) % 10000
+            "content_length": len(mem0_content),
+            "content_hash": hash(mem0_content) % 10000
         }
         
-        # 添加额外元数据
-        if extra_metadata:
-            mem_metadata.update(extra_metadata)
         
         self.client.add(
             mem0_content,
@@ -299,6 +203,9 @@ class Mem0:
         )
         
         logger.info(f"mem0 story_add() content_length={len(mem0_content)}, task_id={task_id}, metadata={mem_metadata}")
+
+
+
 
 
         

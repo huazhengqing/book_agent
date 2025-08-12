@@ -100,6 +100,7 @@ def get_llm_output(node, agent, memory, agent_type, overwrite_cache=False, *args
     prompt_args = {
         'to_run_article_latest': latest_content,
         'to_run_mem0_content': memory.mem0.get_content(node.task_info, to_run_same_graph_dependent, latest_content),
+        # 'to_run_mem0_content': "",
         # 'to_run_full_plan': memory.mem0.get_full_plan(node.task_info),
         'to_run_outer_graph_dependent': memory.mem0.get_content(node.task_info, to_run_same_graph_dependent, latest_content),
         'to_run_root_question': memory.root_node.task_info["goal"],
@@ -108,8 +109,8 @@ def get_llm_output(node, agent, memory, agent_type, overwrite_cache=False, *args
         # 'to_run_outer_graph_dependent': to_run_outer_graph_dependent,
         'to_run_same_graph_dependent': to_run_same_graph_dependent,
         'to_run_task': to_run_task,
-        'to_run_candidate_plan': node.task_info.get("candidate_plan", "Missing"),
-        'to_run_candidate_think': node.task_info.get("candidate_think", "Missing"),
+        'to_run_candidate_plan': node.task_info.get("candidate_plan", ""),
+        'to_run_candidate_think': node.task_info.get("candidate_think", ""),
         'to_run_final_aggregate': kwargs.get("to_run_final_aggregate", ""),
         'to_run_target_write_tasks': to_run_target_write_tasks,
         'to_run_global_writing_task': node.get_all_previous_writing_plan(),

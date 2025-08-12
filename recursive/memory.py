@@ -32,9 +32,6 @@ class Memory:
 
         self.folder = ""
         
-        # 确定写作模式（story, book, report）
-        self.writing_mode = config.get("writing_mode", "story")
-
         self.mem0 = Mem0(root_node, config)
 
 

@@ -180,7 +180,7 @@ def parse_result(res_str):
     
 def process_one_compare(item):
     cnt = 0
-    while cnt < 100:
+    while cnt < 3:
         llm_result = call_llm(
             system_message = None,
             prompt = prompt_template.format(story_a = item["story_a"], story_b = item["story_b"], user_question = item["ori"]["inputs"]),

@@ -43,7 +43,8 @@ class Agent(ABC):
         if history_message is not None:
             message.append(history_message)
         message.append({"role": "user", "content": prompt})
-        logger.info(message[-1]["content"])
+        # logger.info(message[-1]["content"])
+        logger.info(f"call_llm() system_message=\n{system_message}\n\nprompt=\n{prompt}")
         
         model = other_inner_args.pop("model", "gpt-4o")
         
@@ -56,9 +57,7 @@ class Agent(ABC):
         #     reason = ""
         reason = resp["message"].get("reasoning_content") or resp["message"].get("reasoning", "")
         content = resp["message"]["content"]
-        logger.info("Get REASONING: {}\n\nResult: {}".format(
-            reason, content
-        ))
+        logger.info(f"call_llm() reason=\n{reason}\n\ncontent=\n{content}")
 
         assert isinstance(parse_arg_dict, dict)
         result = {

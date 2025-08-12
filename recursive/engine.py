@@ -107,8 +107,8 @@ class GraphRunEngine:
         if need_next_step_node is None:
             logger.info("All Done")
             # display_graph(self.root_node.inner_graph, fn=log_fn)
-            # display_plan(self.root_node.inner_graph)
-            logger.info("Full Graph\n{}".format("\n".join(display_plan(self.root_node.inner_graph))))
+            display_plan(self.root_node.inner_graph)
+            # logger.info("Full Graph\n{}".format("\n".join(display_plan(self.root_node.inner_graph))))
             
             # Save final nodes.json if path provided
             if nodes_json_file:
@@ -141,8 +141,8 @@ class GraphRunEngine:
         self.forward_exam(self.root_node, verbose)
         
         if verbose:
-            # display_plan(self.root_node.inner_graph)
-            logger.info("Full Graph\n{}".format("\n".join(display_plan(self.root_node.inner_graph))))
+            display_plan(self.root_node.inner_graph)
+            # logger.info("Full Graph\n{}".format("\n".join(display_plan(self.root_node.inner_graph))))
         
         
     def forward_one_step_untill_done(self, full_step=False, 
@@ -183,11 +183,11 @@ def read_jsonl(filename: str, jsonl_format=True) -> List[Dict]:
         if filename.endswith(".jsonl") or jsonl_format:
             data = []
             for line in f.readlines():
-                try:
-                    data.append(json.loads(line))
-                except SyntaxError as e:
-                    print("load jsonl line error, msg: {}".format(str(e)))
-                    continue
+                # try:
+                data.append(json.loads(line))
+                # except SyntaxError as e:
+                #     print("load jsonl line error, msg: {}".format(str(e)))
+                #     continue
         else:
             data = json.load(f)
 
@@ -844,7 +844,8 @@ def report_writing(input_filename,
             result = engine.forward_one_step_untill_done(save_folder=folder, nl=True, nodes_json_file=nodes_json_file)    
         except Exception as e:
             logger.error("Encounter exception: {}\nWhen Process {}".format(traceback.format_exc(), question))
-            continue
+            raise e
+            # continue
             
         
         result = get_report_with_ref(engine.root_node.to_json(), result)

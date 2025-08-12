@@ -24,10 +24,9 @@ rm -rf ../test/report
 
 
 # docker-compose stop
-docker-compose down -v
-
-
-docker-compose up -d
+# docker-compose down -v
+# docker-compose up -d
+# sleep 10
 docker ps -a | grep memgraph
 docker ps -a | grep qdrant
 
