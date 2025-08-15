@@ -10,6 +10,7 @@ import json
 from mem0 import Memory as Mem0Memory
 from datetime import datetime
 import time
+import diskcache as dc
 from recursive.agent.prompts.story_zh.mem import (
     MEM_STORY_FACT,
     MEM_STORY_UPDATE
@@ -21,6 +22,12 @@ class Mem0:
         # 确定写作模式（story, book, report）
         self.writing_mode = config.get("writing_mode", "story")
         self.root_node = root_node
+        
+        # 使用diskcache作为查询缓存
+        cache_dir = f"./.mem0/cache_{self.root_node.hashkey}"
+        os.makedirs(cache_dir, exist_ok=True)
+        self._query_cache = dc.Cache(cache_dir, size_limit=100*1024*1024)  # 100MB缓存限制
+        
 
         self.mem0_config = {
             # "vector_store": {
@@ -127,9 +134,6 @@ class Mem0:
 
 
 
-
-    
-    
     
 
     def add(self, content, content_type, task_info):
@@ -148,26 +152,6 @@ class Mem0:
         if self.writing_mode == "story":
             return self.get_story_full_plan(task_info)
 
-
-
-
-    def search(self, querys, category, limit=1, filters=None):
-        query = " ".join(querys)
-        logger.info(f"mem0 search() {category} query=\n{query}")
-        results = self.client.search(
-            query=query,
-            user_id=f"{self.user_id_pre}_{category}",
-            limit=limit,
-            filters=filters
-        )
-        results = results if isinstance(results, list) else results.get('results', [])
-        contents = []
-        for r in results:
-            content = r.get('memory', '')
-            if content:
-                contents.append(content)
-        logger.info(f"mem0 search() contents=\n{contents}")
-        return contents
 
 
 
@@ -218,49 +202,202 @@ class Mem0:
 
 
 
+    def search(self, querys, category, limit=1, filters=None):
+        query = " ".join(querys)
+        
+        cache_key = f"{self.user_id_pre}_{category}_{query}_{limit}_{str(filters)}"
+        if cache_key in self._query_cache:
+            return self._query_cache[cache_key]
+        
+        logger.info(f"mem0 search() {category} query=\n{query}")
+        results = self.client.search(
+            query=query,
+            user_id=f"{self.user_id_pre}_{category}",
+            limit=limit,
+            filters=filters
+        )
+        logger.info(f"mem0 search() results=\n{results}")
+        self._query_cache[cache_key] = results
+        return results
+        
+
+
+
+
+
+    def _extract_keywords_from_markdown(self, markdown_content):
+        """
+        从 Markdown 格式的设计结果中提取关键词（优化中文处理）
+        Args:
+            markdown_content: Markdown 格式的文本内容
+        Returns:
+            list: 提取的关键词列表
+        """
+        if not markdown_content or not isinstance(markdown_content, str):
+            return []
+        
+        keywords = []
+        
+        # 1. 提取标题关键词 (### 标题)
+        # 支持中文标题
+        headings = re.findall(r'#+\s+([^\n]+)', markdown_content)
+        keywords.extend(headings)
+        
+        # 2. 提取加粗文本 (**加粗**)
+        bold_text = re.findall(r'\*\*([^\*]+)\*\*', markdown_content)
+        keywords.extend(bold_text)
+        
+        # 3. 提取斜体文本 (*斜体*)
+        italic_text = re.findall(r'\*([^*]+)\*', markdown_content)
+        keywords.extend(italic_text)
+        
+        # 4. 提取列表项 (- 或 * 开头)
+        list_items = re.findall(r'[-\*]\s+([^\n]+)', markdown_content)
+        keywords.extend(list_items)
+        
+        # 5. 提取表格标题
+        table_headers = re.findall(r'\|\s*([^|]+)\s*\|', markdown_content)
+        keywords.extend(table_headers)
+        
+        # 6. 提取代码块中的关键词 (保留但优化)
+        code_blocks = re.findall(r'```[\s\S]*?```', markdown_content)
+        for block in code_blocks:
+            # 移除代码块标记和语言标识
+            clean_block = re.sub(r'```[a-z]*\n|```', '', block)
+            # 提取可能的关键词（变量名、函数名等）
+            # 针对中文代码注释进行优化
+            code_keywords = re.findall(r'[a-zA-Z_]+|[\u4e00-\u9fa5]+', clean_block)
+            keywords.extend(code_keywords)
+        
+        # 7. 提取 Mermaid 图表中的关键词
+        mermaid_blocks = re.findall(r'```mermaid[\s\S]*?```', markdown_content)
+        for block in mermaid_blocks:
+            # 提取节点和关系，支持中文节点名
+            nodes = re.findall(r'([\u4e00-\u9fa5\w]+)\s*\[', block)
+            keywords.extend(nodes)
+        
+        # 8. 清理和过滤关键词
+        filtered_keywords = []
+        # 中文停用词表
+        stop_words = {
+            '的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你',
+            '会', '着', '没有', '看', '好', '自己', '这', '那个', '时候', '觉得', '开始', '这样', '起来', '没有', '用', '过', '又',
+            '现在', '天气', '今天', '明天', '昨天', '这里', '那里', '一些', '一点', '一下', '下去', '出来', '回去', '东西', '事情',
+            '他们', '她们', '我们', '你们', '它们', '大家', '人们', '这里', '那里', '上面', '下面', '里面', '外面', '地方', '时间',
+            '的话', '所以', '因为', '但是', '不过', '然后', '接着', '终于', '刚刚', '已经', '正在', '将要', '能够', '可以', '应该',
+            '必须', '可能', '也许', '大概', '非常', '特别', '十分', '很', '更', '最', '太', '还', '再', '也', '又', '只', '才', '就',
+            '都', '全', '总', '共', '一共', '一起', '一同', '一道', '一样', '同样', '另外', '其他', '别的', '其余', '所有', '全部',
+            '任何', '每', '各', '每个', '各个', '各种', '各样', '怎样', '怎么', '如何', '多少', '几', '哪个', '哪些', '什么', '为什么'
+        }
+        
+        for keyword in keywords:
+            # 去除空白字符
+            keyword = keyword.strip()
+            # 过滤太短的关键词和停用词
+            # 中文词语长度至少为1，英文单词长度至少为2
+            if (len(keyword) > 1 and keyword.lower() not in stop_words) or (len(keyword) == 1 and re.match(r'[\u4e00-\u9fa5]', keyword)):
+                filtered_keywords.append(keyword)
+        
+        # 去重但保持顺序
+        return list(dict.fromkeys(filtered_keywords))
+        
+
+
+    def _extract_keywords_from_text(self, text_content):
+        """
+        从纯文本中提取关键词
+        """
+        if not text_content or not isinstance(text_content, str):
+            return []
+        
+        # 使用正则表达式提取中文词语和英文单词
+        keywords = re.findall(r'[\u4e00-\u9fa5]+|[a-zA-Z]+', text_content)
+        
+        # 过滤停用词和短词
+        stop_words = {
+            '的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你',
+            '会', '着', '没有', '看', '好', '自己', '这', '那个', '时候', '觉得', '开始', '这样', '起来', '没有', '用', '过', '又',
+            '现在', '天气', '今天', '明天', '昨天', '这里', '那里', '一些', '一点', '一下', '下去', '出来', '回去', '东西', '事情',
+            '他们', '她们', '我们', '你们', '它们', '大家', '人们', '这里', '那里', '上面', '下面', '里面', '外面', '地方', '时间'
+        }
+        
+        filtered_keywords = []
+        for keyword in keywords:
+            # 中文单字非停用词可保留，英文单词至少2个字符
+            if (len(keyword) == 1 and re.match(r'[\u4e00-\u9fa5]', keyword) and keyword not in stop_words) or (len(keyword) > 1 and keyword not in stop_words):
+                filtered_keywords.append(keyword)
+        
+        # 去重并返回
+        return list(dict.fromkeys(filtered_keywords))
+
+
 
 
     def get_story_outer_graph_dependent(self, task_info, same_graph_dependent_designs, latest_content):
+        """检索上层设计结果，替换to_run_outer_graph_dependent"""
         task_goal = task_info.get('goal', '')
         task_type = task_info.get('task_type', '')
         task_id = task_info.get('id', '')
         
-        final_contents = []
+        all_queries = []
 
-        cur_hierarchy_level = len(task_id.split(".")) if task_id else 1
-        filters={
-            "hierarchy_level": {"gte": 1, "lte": cur_hierarchy_level - 1}
-        }
+        all_queries.append(task_goal)
 
-        # 基于任务类型的精准检索
-        if task_type == "write":
-            # 写作任务需要角色状态、情节发展、场景环境
-            querys = [
-                "角色设计 人物设定 角色弧线",
-                "情节设计 剧情结构 悬念布局",
-                "世界设计 背景设定 规则体系",
-                f"任务目标: {task_goal[:200]}"  # 限制长度
-            ]
-        else:  # think任务
-            # 设计任务需要已有设计框架和规划
-            querys = [
-                "角色设计 人物设定",
-                "情节设计 剧情结构", 
-                "世界设计 背景设定",
-                f"设计任务: {task_goal[:200]}"
-            ]
+        overview_keywords = [
+            "故事进展", "角色状态", "情节发展", "主要角色", "关键事件", 
+            "时间线", "角色关系", "冲突", "转折", "背景设定"
+        ]
+        all_queries.extend(overview_keywords)
         
-        final_contents.extend(self.search(querys, 'design', 100, filters))
+        # 提取层级信息（卷、幕、章、场景、节拍）
+        level_patterns = [
+            (r'第(\d+)卷', '卷'),
+            (r'第(\d+)幕', '幕'), 
+            (r'第(\d+)章', '章'),
+            (r'场景(\d+)', '场景'),
+            (r'节拍(\d+)', '节拍')
+        ]
+        for pattern, level_name in level_patterns:
+            matches = re.findall(pattern, task_goal)
+            for num in matches:
+                # 精确层级匹配
+                all_queries.append(f"第{num}{level_name}")
+                # 前后层级上下文（用于获取连续性）
+                try:
+                    num_int = int(num)
+                    if num_int > 1:
+                        all_queries.append(f"第{num_int-1}{level_name}")
+                    all_queries.append(f"第{num_int+1}{level_name}")
+                except:
+                    pass
         
-        # 处理同层设计信息，避免token超限
-        if same_graph_dependent_designs:
-            # 提取关键词而非全文
-            design_keywords = self._extract_design_keywords(same_graph_dependent_designs)
-            if design_keywords:
-                querys = [f"相关设计: {design_keywords}"]
-                final_contents.extend(self.search(querys, "design", 50, filters))
+        # 提取任务ID相关上下文
+        if task_id and '.' in task_id:
+            parent_id = '.'.join(task_id.split('.')[:-1])
+            all_queries.append(f"任务 {parent_id}")
+        
+        if latest_content and isinstance(latest_content, str):
+            all_queries.extend(self._extract_keywords_from_text(latest_content))
 
-        return "\n".join(final_contents[:10])  # 限制返回数量
+        all_queries.extend(self._extract_keywords_from_markdown(same_graph_dependent_designs))
+        
+        # 合并所有关键词并去重
+        final_queries = list(dict.fromkeys(all_queries))
+
+        # 执行检索
+        all_results = self.search(final_queries, "design", limit=500)
+        
+        # 处理结果
+        combined_results = []
+        for result in all_results:
+            memory_content = result.get('memory', '')
+            if memory_content:
+                combined_results.append(memory_content)
+        return "\n\n".join(combined_results)
+
+
+
+
 
 
 
@@ -270,52 +407,71 @@ class Mem0:
 
 
     def get_story_content(self, task_info, same_graph_dependent_designs, latest_content):
+        """
+        检索已写的正文内容，替换memory.article
+        目标：提供故事概览，让LLM了解故事进展、角色状态、情节发展
+        """
         task_goal = task_info.get('goal', '')
-        task_type = task_info.get('task_type', '')
+        task_id = task_info.get('id', '')
+        
+        all_queries = []
 
-        final_contents = []
+        all_queries.append(task_goal)
 
-        # 基于任务类型的分层检索策略
-        if task_type == "write":
-            # 写作任务：重点关注角色状态、情节连贯、场景环境
-            final_contents.append("=== 角色当前状态 ===")
-            querys = ["角色动态", "角色状态", "人物关系", "角色成长"]
-            final_contents.extend(self.search(querys, "story", 50))
+        overview_keywords = [
+            "故事进展", "角色状态", "情节发展", "主要角色", "关键事件", 
+            "时间线", "角色关系", "冲突", "转折", "背景设定"
+        ]
+        all_queries.extend(overview_keywords)
+        
+        # 提取层级信息（卷、幕、章、场景、节拍）
+        level_patterns = [
+            (r'第(\d+)卷', '卷'),
+            (r'第(\d+)幕', '幕'), 
+            (r'第(\d+)章', '章'),
+            (r'场景(\d+)', '场景'),
+            (r'节拍(\d+)', '节拍')
+        ]
+        for pattern, level_name in level_patterns:
+            matches = re.findall(pattern, task_goal)
+            for num in matches:
+                # 精确层级匹配
+                all_queries.append(f"第{num}{level_name}")
+                # 前后层级上下文（用于获取连续性）
+                try:
+                    num_int = int(num)
+                    if num_int > 1:
+                        all_queries.append(f"第{num_int-1}{level_name}")
+                    all_queries.append(f"第{num_int+1}{level_name}")
+                except:
+                    pass
+        
+        # 提取任务ID相关上下文
+        if task_id and '.' in task_id:
+            parent_id = '.'.join(task_id.split('.')[:-1])
+            all_queries.append(f"任务 {parent_id}")
+        
+        if latest_content and isinstance(latest_content, str):
+            all_queries.extend(self._extract_keywords_from_text(latest_content))
 
-            final_contents.append("=== 情节发展脉络 ===") 
-            querys = ["情节进展", "事件脉络", "悬念伏笔", "因果关系"]
-            final_contents.extend(self.search(querys, "story", 50))
+        all_queries.extend(self._extract_keywords_from_markdown(same_graph_dependent_designs))
+        
+        # 合并所有关键词并去重
+        final_queries = list(dict.fromkeys(all_queries))
 
-            final_contents.append("=== 场景环境设定 ===")
-            querys = ["场景环境", "世界设定", "势力关系", "规则体系"]
-            final_contents.extend(self.search(querys, "story", 30))
+        # 执行检索
+        all_results = self.search(final_queries, "story", limit=500)
+        
+        # 处理结果
+        combined_results = []
+        for result in all_results:
+            memory_content = result.get('memory', '')
+            if memory_content:
+                combined_results.append(memory_content)
+        return "\n\n".join(combined_results)
 
-            # 最新内容关联检索
-            if latest_content:
-                final_contents.append("=== 最新情节关联 ===")
-                latest_keywords = self._extract_content_keywords(latest_content[-500:])
-                if latest_keywords:
-                    querys = [f"相关情节: {latest_keywords}"]
-                    final_contents.extend(self.search(querys, "story", 30))
 
-        else:  # think任务
-            # 设计任务：重点关注设计框架、规划思路
-            final_contents.append("=== 已有设计框架 ===")
-            querys = ["角色设计", "情节设计", "世界设计"]
-            final_contents.extend(self.search(querys, "story", 40))
 
-            final_contents.append("=== 相关情节表现 ===")
-            querys = ["情节进展", "角色动态", "场景世界"]
-            final_contents.extend(self.search(querys, "story", 40))
-
-        # 任务特定信息
-        final_contents.append("=== 任务相关信息 ===")
-        task_keywords = self._extract_task_keywords(task_goal)
-        if task_keywords:
-            querys = [f"任务相关: {task_keywords}"]
-            final_contents.extend(self.search(querys, "story", 30))
-
-        return "\n".join(final_contents)
 
 
 
@@ -351,73 +507,7 @@ class Mem0:
         
         return "\n".join(task_goals)
 
-    def _extract_design_keywords(self, design_text):
-        """从设计文本中提取关键词，避免token超限"""
-        if not design_text or len(design_text) < 50:
-            return ""
-        
-        # 提取【】标签内的关键词
-        import re
-        keywords = re.findall(r'【([^】]+)】', design_text[:1000])
-        
-        # 提取常见的设计关键词
-        design_keywords = []
-        key_patterns = [
-            r'角色.*?设计', r'人物.*?设定', r'主角.*?[：:]([^。\n]+)',
-            r'情节.*?设计', r'剧情.*?结构', r'冲突.*?[：:]([^。\n]+)',
-            r'世界.*?设计', r'背景.*?设定', r'规则.*?[：:]([^。\n]+)'
-        ]
-        
-        for pattern in key_patterns:
-            matches = re.findall(pattern, design_text[:1000])
-            design_keywords.extend(matches)
-        
-        # 合并关键词，限制长度
-        all_keywords = keywords + design_keywords
-        return " ".join(all_keywords[:10])  # 限制关键词数量
 
-    def _extract_content_keywords(self, content_text):
-        """从正文内容中提取关键词"""
-        if not content_text:
-            return ""
-        
-        # 提取人名、地名、重要物品等
-        import re
-        keywords = []
-        
-        # 提取引号内的对话关键词
-        dialogue_matches = re.findall(r'"([^"]{5,30})"', content_text)
-        keywords.extend([match[:15] for match in dialogue_matches[:3]])
-        
-        # 提取动作关键词
-        action_patterns = [r'(\w+)(?:走向|冲向|看向|转身|停下)', r'(\w+)(?:说道|喊道|低语)']
-        for pattern in action_patterns:
-            matches = re.findall(pattern, content_text)
-            keywords.extend(matches[:3])
-        
-        return " ".join(keywords[:8])
-
-    def _extract_task_keywords(self, task_goal):
-        """从任务目标中提取关键词"""
-        if not task_goal:
-            return ""
-        
-        # 提取任务中的关键动词和名词
-        import re
-        keywords = []
-        
-        # 提取动作关键词
-        action_words = re.findall(r'(设计|创作|描述|分析|规划|构建|完善)([^，。\n]{5,20})', task_goal)
-        for action, target in action_words:
-            keywords.append(f"{action}{target}")
-        
-        # 提取主题关键词
-        theme_patterns = [r'(角色|人物|主角|配角)', r'(情节|剧情|故事|冲突)', r'(世界|背景|设定|环境)']
-        for pattern in theme_patterns:
-            matches = re.findall(pattern, task_goal)
-            keywords.extend(matches)
-        
-        return " ".join(keywords[:6])
     
 
 

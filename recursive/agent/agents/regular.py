@@ -94,19 +94,20 @@ def get_llm_output(node, agent, memory, agent_type, overwrite_cache=False, *args
                 "Write Task{}，word count requirements：{}".format(idx, node.task_info["length"]) for idx, node in enumerate(depend_write_task, start=1)
             ) if (depend_write_task is not None and len(depend_write_task) > 0) else "Not Provided"
         
-    
-    # Prepare prompt arguments
+        
     latest_content = memory.get_article_latest()
+    mem0_content = memory.mem0.get_content(node.task_info, to_run_same_graph_dependent, latest_content)
+    outer_graph_dependent = memory.mem0.get_outer_graph_dependent(node.task_info, to_run_same_graph_dependent, latest_content)
+    
+    
     prompt_args = {
         'to_run_article_latest': latest_content,
-        'to_run_mem0_content': memory.mem0.get_content(node.task_info, to_run_same_graph_dependent, latest_content),
-        # 'to_run_mem0_content': "",
-        # 'to_run_full_plan': memory.mem0.get_full_plan(node.task_info),
-        'to_run_outer_graph_dependent': memory.mem0.get_content(node.task_info, to_run_same_graph_dependent, latest_content),
+        'to_run_mem0_content': mem0_content,
         'to_run_root_question': memory.root_node.task_info["goal"],
         'to_run_article': memory.article,
         'to_run_full_plan': node.get_all_layer_plan(),
         # 'to_run_outer_graph_dependent': to_run_outer_graph_dependent,
+        'to_run_outer_graph_dependent': outer_graph_dependent,
         'to_run_same_graph_dependent': to_run_same_graph_dependent,
         'to_run_task': to_run_task,
         'to_run_candidate_plan': node.task_info.get("candidate_plan", ""),
