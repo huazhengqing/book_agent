@@ -10,7 +10,9 @@ recursive.egg-info/
 bak/
 tmp/
 docs/
-
+bug/
+test/cache/
+test/story/
 
 api_key.env
 config.ini

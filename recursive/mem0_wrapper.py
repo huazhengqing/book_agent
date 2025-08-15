@@ -151,37 +151,50 @@ class Mem0:
 
 
 
+    def search(self, querys, category, limit=1, filters=None):
+        query = " ".join(querys)
+        logger.info(f"mem0 search() {category} query=\n{query}")
+        results = self.client.search(
+            query=query,
+            user_id=f"{self.user_id_pre}_{category}",
+            limit=limit,
+            filters=filters
+        )
+        results = results if isinstance(results, list) else results.get('results', [])
+        contents = []
+        for r in results:
+            content = r.get('memory', '')
+            if content:
+                contents.append(content)
+        logger.info(f"mem0 search() contents=\n{contents}")
+        return contents
+
 
 
     def story_add(self, content, content_type, task_info):
         task_id = task_info.get("id")
-        if not task_id:
-            return
         task_type = task_info.get("task_type")
         task_goal = task_info.get("goal")
         dependency = task_info.get("dependency")
-        dependency_str = json.dumps(dependency, ensure_ascii=False)
         task_str = json.dumps(task_info, ensure_ascii=False)
-
 
         if content_type == "story_content":
             category = "story"
         elif content_type in ["task_update", "task_decomposition", "design_result"]:
             category = "design"
 
-
         mem0_content = ""
         if content_type == "story_content":
             mem0_content = content
         elif content_type == "task_decomposition":
-            mem0_content = f"""任务：{task_str}\n规划分解结果：{content}"""
+            mem0_content = f"""任务：\n{task_str}\n规划分解结果：\n{content}"""
         elif content_type == "design_result":
-            mem0_content = f"""任务：{task_str}\n设计结果：{content}"""
+            mem0_content = f"""任务：\n{task_str}\n设计结果：\n{content}"""
         elif content_type == "task_update":
-            mem0_content = f"""任务：{task_str}\n更新任务目标：{content}"""
+            mem0_content = f"""任务更新：\n{content}"""
 
-        
         parent_task_id = ".".join(task_id.split(".")[:-1]) if task_id and "." in task_id else ""
+        dependency_str = json.dumps(dependency, ensure_ascii=False)
         mem_metadata = {
             "category": category,
             "content_type": content_type,
@@ -190,224 +203,125 @@ class Mem0:
             "hierarchy_level": len(task_id.split(".")),
             "parent_task_id": parent_task_id,
             "dependency": dependency_str,
-            "dependency_count": len(dependency),
             "content_length": len(mem0_content),
             "content_hash": hash(mem0_content) % 10000
         }
         
-        
+        logger.info(f"mem0 story_add() mem0_content=\n{mem0_content}\n mem_metadata=\n{mem_metadata}")
         self.client.add(
             mem0_content,
             user_id=f"{self.user_id_pre}_{category}",
             metadata=mem_metadata
         )
-        
-        logger.info(f"mem0 story_add() content_length={len(mem0_content)}, task_id={task_id}, metadata={mem_metadata}")
 
 
 
 
 
-        
+
 
     def get_story_outer_graph_dependent(self, task_info, same_graph_dependent_designs, latest_content):
         task_goal = task_info.get('goal', '')
         task_type = task_info.get('task_type', '')
         task_id = task_info.get('id', '')
+        
+        final_contents = []
+
         cur_hierarchy_level = len(task_id.split(".")) if task_id else 1
-        
-        # 构建多层次查询策略
-        query_strategies = []
-        
-        # 策略1: 基于任务目标的关键词提取
-        goal_keywords = self._extract_keywords_from_goal(task_goal)
-        if goal_keywords:
-            query_strategies.append(" ".join(goal_keywords))
-        
-        # 策略2: 基于任务类型的相关设计
+        filters={
+            "hierarchy_level": {"gte": 1, "lte": cur_hierarchy_level - 1}
+        }
+
+        # 基于任务类型的精准检索
         if task_type == "write":
-            query_strategies.extend([
-                "结构划分 字数分配 章节设计",
-                "角色设计 情节设计 世界观设计",
-                "开篇设计 悬念设计 节奏设计"
-            ])
-        elif task_type == "think":
-            query_strategies.extend([
-                "设计方案 具体方案 执行指导",
-                "框架设计 要素分析 操作指南"
-            ])
+            # 写作任务需要角色状态、情节发展、场景环境
+            querys = [
+                "角色设计 人物设定 角色弧线",
+                "情节设计 剧情结构 悬念布局",
+                "世界设计 背景设定 规则体系",
+                f"任务目标: {task_goal[:200]}"  # 限制长度
+            ]
+        else:  # think任务
+            # 设计任务需要已有设计框架和规划
+            querys = [
+                "角色设计 人物设定",
+                "情节设计 剧情结构", 
+                "世界设计 背景设定",
+                f"设计任务: {task_goal[:200]}"
+            ]
         
-        # 策略3: 基于层级关系的父任务设计
-        if "." in task_id:
-            parent_id = ".".join(task_id.split(".")[:-1])
-            query_strategies.append(f"任务{parent_id}")
+        final_contents.extend(self.search(querys, 'design', 100, filters))
         
-        # 策略4: 包含同图依赖设计
+        # 处理同层设计信息，避免token超限
         if same_graph_dependent_designs:
-            query_strategies.append(same_graph_dependent_designs[:200])  # 限制长度
-        
-        # 执行多策略检索并合并结果
-        all_contents = []
-        seen = set()
-        
-        for query in query_strategies:
-            if not query.strip():
-                continue
-                
-            results = self.client.search(
-                query=query,
-                user_id=f"{self.user_id_pre}_design",
-                limit=20,  # 每个策略限制结果数
-                filters={
-                    "content_type": "design_result",
-                    "hierarchy_level": {"gte": 1, "lte": cur_hierarchy_level - 1}
-                }
-            )
-            
-            results = results if isinstance(results, list) else results.get('results', [])
-            
-            for r in results:
-                content = r.get('memory', '')
-                content_hash = hash(content)
-                if content_hash not in seen and len(content) > 20:  # 过滤过短内容
-                    all_contents.append({
-                        'content': content,
-                        'score': r.get('score', 0),
-                        'metadata': r.get('metadata', {})
-                    })
-                    seen.add(content_hash)
-        
-        # 按相关性分数排序并选择最相关的内容
-        all_contents.sort(key=lambda x: x['score'], reverse=True)
-        final_contents = [item['content'] for item in all_contents[:15]]  # 最多15个最相关结果
-        
-        final_content = "\n\n".join(final_contents)
-        logger.info(f"mem0 get_story_outer_graph_dependent() strategies={len(query_strategies)}, results={len(final_contents)}, cur_hierarchy_level={cur_hierarchy_level}")
-        return final_content
-    
-    def _extract_keywords_from_goal(self, goal):
-        """从任务目标中提取关键词"""
-        if not goal:
-            return []
-        
-        # 提取中文关键词的简单规则
-        import re
-        keywords = []
-        
-        # 提取专有名词和重要概念
-        patterns = [
-            r'第[一二三四五六七八九十\d]+[章幕卷]',  # 章节信息
-            r'[\u4e00-\u9fff]{2,6}(?=设计|规划|分析|框架)',  # 设计相关
-            r'(?:角色|人物|主角|反派|配角)[\u4e00-\u9fff]*',  # 角色相关
-            r'(?:情节|剧情|故事|叙事)[\u4e00-\u9fff]*',  # 情节相关
-            r'(?:世界观|背景|设定)[\u4e00-\u9fff]*',  # 世界观相关
-            r'(?:开篇|结尾|高潮|转折)[\u4e00-\u9fff]*',  # 结构相关
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, goal)
-            keywords.extend(matches)
-        
-        # 提取重要的双字词
-        words = re.findall(r'[\u4e00-\u9fff]{2,4}', goal)
-        important_words = [w for w in words if any(key in w for key in 
-                          ['设计', '规划', '分析', '框架', '结构', '角色', '情节', '世界', '开篇', '悬念'])]
-        keywords.extend(important_words)
-        
-        return list(set(keywords))[:10]  # 去重并限制数量
-        
+            # 提取关键词而非全文
+            design_keywords = self._extract_design_keywords(same_graph_dependent_designs)
+            if design_keywords:
+                querys = [f"相关设计: {design_keywords}"]
+                final_contents.extend(self.search(querys, "design", 50, filters))
+
+        return "\n".join(final_contents[:10])  # 限制返回数量
+
+
+
+
+
+
 
 
     def get_story_content(self, task_info, same_graph_dependent_designs, latest_content):
         task_goal = task_info.get('goal', '')
-        background_contents = self.get_story_content_background(task_goal, same_graph_dependent_designs, latest_content)
-        plot_contents = self.get_story_content_plot(task_goal, same_graph_dependent_designs, latest_content)
+        task_type = task_info.get('task_type', '')
+
         final_contents = []
-        if background_contents:
-            final_contents.append("=== 故事背景信息 ===")
-            final_contents.extend(background_contents)
-        if plot_contents:
-            final_contents.append("=== 情节发展信息 ===")
-            final_contents.extend(plot_contents)
+
+        # 基于任务类型的分层检索策略
+        if task_type == "write":
+            # 写作任务：重点关注角色状态、情节连贯、场景环境
+            final_contents.append("=== 角色当前状态 ===")
+            querys = ["角色动态", "角色状态", "人物关系", "角色成长"]
+            final_contents.extend(self.search(querys, "story", 50))
+
+            final_contents.append("=== 情节发展脉络 ===") 
+            querys = ["情节进展", "事件脉络", "悬念伏笔", "因果关系"]
+            final_contents.extend(self.search(querys, "story", 50))
+
+            final_contents.append("=== 场景环境设定 ===")
+            querys = ["场景环境", "世界设定", "势力关系", "规则体系"]
+            final_contents.extend(self.search(querys, "story", 30))
+
+            # 最新内容关联检索
+            if latest_content:
+                final_contents.append("=== 最新情节关联 ===")
+                latest_keywords = self._extract_content_keywords(latest_content[-500:])
+                if latest_keywords:
+                    querys = [f"相关情节: {latest_keywords}"]
+                    final_contents.extend(self.search(querys, "story", 30))
+
+        else:  # think任务
+            # 设计任务：重点关注设计框架、规划思路
+            final_contents.append("=== 已有设计框架 ===")
+            querys = ["角色设计", "情节设计", "世界设计"]
+            final_contents.extend(self.search(querys, "story", 40))
+
+            final_contents.append("=== 相关情节表现 ===")
+            querys = ["情节进展", "角色动态", "场景世界"]
+            final_contents.extend(self.search(querys, "story", 40))
+
+        # 任务特定信息
+        final_contents.append("=== 任务相关信息 ===")
+        task_keywords = self._extract_task_keywords(task_goal)
+        if task_keywords:
+            querys = [f"任务相关: {task_keywords}"]
+            final_contents.extend(self.search(querys, "story", 30))
+
         return "\n".join(final_contents)
 
-    def get_story_content_background(self, task_goal, same_graph_dependent_designs, latest_content):
-        background_tags = [
-            "世界背景:", "规则体系:", "文化背景:", "科技魔法:", "社会结构:",
-            "角色档案:", "角色关系:", "场景设置:"
-        ]
-        
-        query_parts = []
-        query_parts.append(f"({' OR '.join(background_tags)})")
-        query_parts.append(task_goal)
-        if same_graph_dependent_designs:
-            query_parts.append(same_graph_dependent_designs)
-        
-        query = " ".join(query_parts)
-        
-        results = self.client.search(
-            query=query,
-            user_id=f"{self.user_id_pre}_story",
-            limit=500
-        )
-        results = results if isinstance(results, list) else results.get('results', [])
-        contents = []
-        seen = set()
-        for r in results:
-            content = r.get('memory', '')
-            content_hash = hash(content)
-            if content_hash not in seen:
-                contents.append(content)
-                seen.add(content_hash)
-        logger.info(f"mem0 get_story_content_background() query=\n{query}\n, contents=\n{contents}")
-        return contents
 
-    def get_story_content_plot(self, task_goal, same_graph_dependent_designs, latest_content):
-        plot_tags = [
-            "关键事件:", "情节转折:", "冲突设置:", "因果关系:", "情节线索:",
-            "时间节点:", "角色状态:", "角色成长:", "角色动机:",
-            "关键对话:", "信息透露:", "情感表达:", "观点冲突:",
-            "悬念设置:", "伏笔线索:", "未解谜题:", "预示暗示:"
-        ]
-        
-        query_parts = []
-        query_parts.append(f"({' OR '.join(plot_tags)})")
-        query_parts.append(task_goal)
-        if same_graph_dependent_designs:
-            query_parts.append(same_graph_dependent_designs)
-        
-        # 添加最新内容上下文以保持连续性
-        length = 2000
-        if latest_content:
-            latest_context = latest_content[-length:] if len(latest_content) > length else latest_content
-            # 提取人物名称
-            import re
-            names = re.findall(r'[\u4e00-\u9fff]{2,4}(?=说|道|想|看|听|感到|发现)', latest_context)
-            if names:
-                query_parts.append(" ".join(set(names[:10])))  # 最多10个人物名
-        
-        query = " ".join(query_parts)
-        
-        results = self.client.search(
-            query=query,
-            user_id=f"{self.user_id_pre}_story",
-            limit=500
-        )
-        results = results if isinstance(results, list) else results.get('results', [])
-        
-        # 按时间排序情节信息
-        results.sort(key=lambda x: x.get('metadata', {}).get('timestamp', ''))
-        
-        contents = []
-        seen = set()
-        for r in results:
-            content = r.get('memory', '')
-            content_hash = hash(content)
-            if content_hash not in seen:
-                contents.append(content)
-                seen.add(content_hash)
-        logger.info(f"mem0 get_story_content_plot() query=\n{query}\n, contents=\n{contents}")
-        return contents
+
+
+
+
 
 
     def get_story_full_plan(self, task_info):
@@ -436,9 +350,75 @@ class Mem0:
             task_goals.append(f"[{pid}]: {results[0].get('memory')}")
         
         return "\n".join(task_goals)
-    
-    
 
+    def _extract_design_keywords(self, design_text):
+        """从设计文本中提取关键词，避免token超限"""
+        if not design_text or len(design_text) < 50:
+            return ""
+        
+        # 提取【】标签内的关键词
+        import re
+        keywords = re.findall(r'【([^】]+)】', design_text[:1000])
+        
+        # 提取常见的设计关键词
+        design_keywords = []
+        key_patterns = [
+            r'角色.*?设计', r'人物.*?设定', r'主角.*?[：:]([^。\n]+)',
+            r'情节.*?设计', r'剧情.*?结构', r'冲突.*?[：:]([^。\n]+)',
+            r'世界.*?设计', r'背景.*?设定', r'规则.*?[：:]([^。\n]+)'
+        ]
+        
+        for pattern in key_patterns:
+            matches = re.findall(pattern, design_text[:1000])
+            design_keywords.extend(matches)
+        
+        # 合并关键词，限制长度
+        all_keywords = keywords + design_keywords
+        return " ".join(all_keywords[:10])  # 限制关键词数量
+
+    def _extract_content_keywords(self, content_text):
+        """从正文内容中提取关键词"""
+        if not content_text:
+            return ""
+        
+        # 提取人名、地名、重要物品等
+        import re
+        keywords = []
+        
+        # 提取引号内的对话关键词
+        dialogue_matches = re.findall(r'"([^"]{5,30})"', content_text)
+        keywords.extend([match[:15] for match in dialogue_matches[:3]])
+        
+        # 提取动作关键词
+        action_patterns = [r'(\w+)(?:走向|冲向|看向|转身|停下)', r'(\w+)(?:说道|喊道|低语)']
+        for pattern in action_patterns:
+            matches = re.findall(pattern, content_text)
+            keywords.extend(matches[:3])
+        
+        return " ".join(keywords[:8])
+
+    def _extract_task_keywords(self, task_goal):
+        """从任务目标中提取关键词"""
+        if not task_goal:
+            return ""
+        
+        # 提取任务中的关键动词和名词
+        import re
+        keywords = []
+        
+        # 提取动作关键词
+        action_words = re.findall(r'(设计|创作|描述|分析|规划|构建|完善)([^，。\n]{5,20})', task_goal)
+        for action, target in action_words:
+            keywords.append(f"{action}{target}")
+        
+        # 提取主题关键词
+        theme_patterns = [r'(角色|人物|主角|配角)', r'(情节|剧情|故事|冲突)', r'(世界|背景|设定|环境)']
+        for pattern in theme_patterns:
+            matches = re.findall(pattern, task_goal)
+            keywords.extend(matches)
+        
+        return " ".join(keywords[:6])
+    
 
 
 
