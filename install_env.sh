@@ -41,6 +41,7 @@ echo
 
 echo "Upgrading pip..."
 # pip install --upgrade pip
+# pip install nltk && python -m nltk.downloader punkt
 echo
 
 echo "Installing all project dependencies..."

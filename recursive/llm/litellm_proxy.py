@@ -80,6 +80,7 @@ class LiteLLMProxy:
             if key not in litellm_params and value is not None:
                 litellm_params[key] = value
         
+        # logger.info(f"call_fast() litellm_params={litellm_params}")
         response = litellm.completion(**litellm_params)
         return response.choices
 

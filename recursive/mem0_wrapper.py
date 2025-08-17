@@ -10,8 +10,8 @@ import json
 from mem0 import Memory as Mem0Memory
 from datetime import datetime
 import time
-from recursive.utils.keyword_extractor_zh import KeywordExtractorZh
-from recursive.utils.keyword_extractor_en import KeywordExtractorEn
+from recursive.utils.keyword_extractor_zh import keyword_extractor_zh
+from recursive.utils.keyword_extractor_en import keyword_extractor_en
 from recursive.agent.prompts.story_zh.mem import (
     mem_story_fact,
     mem_story_update,
@@ -27,17 +27,15 @@ class Mem0:
         self.language = config.get("language", "zh")
         self.config = config
         self.root_node = root_node
-        
         self.user_id_pre = f"{self.writing_mode}_{self.root_node.hashkey}"
-
         if self.language == "zh":
-            self.keyword_extractor = KeywordExtractorZh(mode=self.writing_mode)
+            self.keyword_extractor = keyword_extractor_zh
+        elif self.language == "en":
+            self.keyword_extractor = keyword_extractor_en
         else:
-            self.keyword_extractor = KeywordExtractorEn(mode=self.writing_mode)
-
+            raise ValueError(f"Unsupported language: {self.language}")
         self.llm_client = LiteLLMProxy()
         self.fast_model = os.environ.get("fast_model")
-
         self.mem0_config = {
             # "vector_store": {
             #     "provider": "chroma",
@@ -122,6 +120,8 @@ class Mem0:
         elif self.writing_mode == "report":
             self.config["custom_fact_extraction_prompt"] = ""
             self.config["custom_update_memory_prompt"] = ""
+        else:
+            raise ValueError(f"writing_mode={self.writing_mode} not supported")
         # temp = os.getenv("OPENROUTER_API_KEY")
         # if self.mem0_config["llm"]["provider"] == "openai":
         #     # os.environ["OPENROUTER_API_KEY"] = ""
@@ -200,12 +200,24 @@ class Mem0:
     def get_outer_graph_dependent(self, task_info, same_graph_dependent_designs, latest_content):
         if self.writing_mode == "story":
             return self.get_story_outer_graph_dependent(task_info, same_graph_dependent_designs, latest_content)
+        elif self.writing_mode == "book":
+            return ""
+        elif self.writing_mode == "report":
+            return ""
+        else:
+            raise ValueError(f"writing_mode={self.writing_mode} not supported")
 
 
 
     def get_content(self, task_info, same_graph_dependent_designs, latest_content):
         if self.writing_mode == "story":
             return self.get_story_content(task_info, same_graph_dependent_designs, latest_content)
+        elif self.writing_mode == "book":
+            return ""
+        elif self.writing_mode == "report":
+            return ""
+        else:
+            raise ValueError(f"writing_mode={self.writing_mode} not supported")
 
 
 
@@ -220,16 +232,25 @@ class Mem0:
         prompt = ""
         if self.writing_mode == "story":
             prompt = mem_story_design_queries.format(task_goal=task_goal, context_str=context_str)
+        elif self.writing_mode == "book":
+            pass
+        elif self.writing_mode == "report":
+            pass
+        else:
+            raise ValueError(f"writing_mode={self.writing_mode} not supported")
         response = self.llm_client.call_fast(
             model=self.fast_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
         )
         content = response[0].message.content
-        queries = json.loads(content)
-        if isinstance(queries, list):
-            logger.info(f"动态生成的'设计'查询词: {queries}")
-            return queries
+        try:
+            queries = json.loads(content)
+            if isinstance(queries, list):
+                logger.info(f"_generate_design_queries(): {queries}")
+                return queries
+        except json.JSONDecodeError:
+            logger.error(f"Failed to decode JSON from LLM for design queries. Content: {content}")
         return []
 
 
@@ -240,16 +261,25 @@ class Mem0:
         prompt = ""
         if self.writing_mode == "story":
             prompt = mem_story_text_queries.format(task_goal=task_goal, context_str=context_str)
+        elif self.writing_mode == "book":
+            pass
+        elif self.writing_mode == "report":
+            pass
+        else:
+            raise ValueError(f"writing_mode={self.writing_mode} not supported")
         response = self.llm_client.call_fast(
             model=self.fast_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
         )
         content = response[0].message.content
-        queries = json.loads(content)
-        if isinstance(queries, list):
-            logger.info(f"动态生成的'正文'查询词: {queries}")
-            return queries
+        try:
+            queries = json.loads(content)
+            if isinstance(queries, list):
+                logger.info(f"_generate_text_queries(): {queries}")
+                return queries
+        except json.JSONDecodeError:
+            logger.error(f"Failed to decode JSON from LLM for text queries. Content: {content}")
         return []
     
 
@@ -263,78 +293,29 @@ class Mem0:
         task_type = task_info.get('task_type', '')
         task_id = task_info.get('id', '')
         
-        # 1. 使用LLM动态生成查询 (新功能)
-        llm_queries = self._generate_design_queries(
+        # 使用LLM动态生成查询 
+        all_queries = self._generate_design_queries(
             task_goal=task_goal,
             context_str=f"相关设计:\n{same_graph_dependent_designs}\n\n最新内容:\n{latest_content}"
         )
-        all_queries = llm_queries
 
-        # 2. 基于规则的查询生成（作为补充和保底）
         all_queries.append(task_goal)
 
-        # 3. 层级信息提取 - 基于新标签体系
-        level_patterns = [
-            (r'第(\d+)卷', '卷', '#第{}卷'),
-            (r'第(\d+)幕', '幕', '#第{}幕'),
-            (r'第(\d+)章', '章', '#第{}章'),
-            (r'场景(\d+)', '场景', '#场景{}'),
-            (r'节拍(\d+)', '节拍', '#节拍{}')
-        ]
-        for pattern, level_name, tag_template in level_patterns:
-            matches = re.findall(pattern, task_goal)
-            for num in matches:
-                # 精确层级匹配
-                all_queries.append(f"第{num}{level_name}")
-                all_queries.append(tag_template.format(num))
-                # 上级层级上下文（获取更高层级的设计指导）
-                try:
-                    num_int = int(num)
-                    if level_name == '章' and num_int > 1:
-                        all_queries.append(f"第{num_int-1}章")
-                        all_queries.append(f"#第{num_int-1}章")
-                    elif level_name == '幕':
-                        all_queries.append(f"#幕级")
-                    elif level_name == '卷':
-                        all_queries.append(f"#卷级")
-                except ValueError:
-                    logger.warning(f"Invalid number format for level: {num}")
-        
-        # 4. 任务ID层级关联 - 检索父任务的设计结果
-        if task_id and '.' in task_id:
-            parent_id = '.'.join(task_id.split('.')[:-1])
-            all_queries.append(f"任务 {parent_id}")
-            # 添加层级标签
-            hierarchy_level = len(task_id.split('.'))
-            if hierarchy_level <= 2:
-                all_queries.append("#全书级")
-            elif hierarchy_level <= 3:
-                all_queries.append("#卷级")
-            elif hierarchy_level <= 4:
-                all_queries.append("#幕级")
-            elif hierarchy_level <= 5:
-                all_queries.append("#场景级")
+        if latest_content:
+            all_queries.extend(self.keyword_extractor.extract_from_text(latest_content))
 
-        # 5. 从同层设计方案提取关键词 (强信号)
         if same_graph_dependent_designs:
-            design_keywords = self.keyword_extractor.extract_from_markdown(same_graph_dependent_designs)
-            important_keywords = [kw for kw in design_keywords[:20] if len(kw) > 1]
-            all_queries.extend(important_keywords)
+            all_queries.extend(self.keyword_extractor.extract_from_markdown(same_graph_dependent_designs))
 
-        # 去重并优化查询词
         final_queries = list(dict.fromkeys(all_queries))
-        logger.info(f"Design search queries: {final_queries[:10]}...")  # 记录部分查询词
         
-        # 构建过滤条件
         cur_hierarchy_level = len(task_id.split(".")) if task_id else 1
         filters = {
             "content_type": "design_result",
             "hierarchy_level": {"gte": 1, "lte": cur_hierarchy_level}
         }
-        all_results = self.search(final_queries, "design", limit=50, filters=filters)
+        all_results = self.search(final_queries, "design", limit=500, filters=filters)
         
-        combined_results = []
-        seen_contents = set()
         
         # 按重要性和层级排序，优化排序策略
         sorted_results = sorted(all_results, key=lambda x: (
@@ -348,20 +329,19 @@ class Mem0:
             -x.get('metadata', {}).get('timestamp', '')
         ))
         
+        combined_results = []
+        seen_contents = set()
         for result in sorted_results:
             memory_content = result.get('memory', '')
             if memory_content and memory_content not in seen_contents:
-                # 过滤条件：内容长度和质量
-                if len(memory_content) > 50 and any(keyword in memory_content for keyword in ['设计方案', '设定', '规划', '架构']):
-                    combined_results.append(memory_content)
-                    seen_contents.add(memory_content)
-                # 限制最终结果数量，避免上下文过长。原值为2000，过高，可能导致性能问题和上下文超限。
-                # 调整为更合理的值，例如20个高质量的设计文档。
-                if len(combined_results) >= 20:
-                    break
-        
-        logger.info(f"Found {len(combined_results)} relevant design results")
+                combined_results.append(memory_content)
+                seen_contents.add(memory_content)
+        logger.info(f"get_story_outer_graph_dependent() combined_results=\n{combined_results}")
         return "\n\n".join(combined_results)
+
+
+
+
 
     def get_story_content(self, task_info, same_graph_dependent_designs, latest_content):
         """
@@ -370,51 +350,23 @@ class Mem0:
         task_goal = task_info.get('goal', '')
         task_id = task_info.get('id', '') 
         
-        # 1. 使用LLM动态生成查询 (新功能)
-        llm_queries = self._generate_text_queries(
+        # 使用LLM动态生成查询
+        all_queries = self._generate_text_queries(
             task_goal=task_goal,
-            context_str=f"最新正文内容:\n{latest_content}"
+            context_str=f"最新正文内容:\n{latest_content}\n\n相关设计:\n{same_graph_dependent_designs}"
         )
-        all_queries = llm_queries
 
-        # 2. 基于规则的查询生成（作为补充和保底）
         all_queries.append(task_goal)
 
-        # 3. 当前章节上下文 - 将"最新"、"近期"转化为具体章节检索词
-        current_chapter_queries = self._get_current_chapter_context(task_goal, task_id)
-        all_queries.extend(current_chapter_queries)
-        
-        # 4. 任务ID关联 - 检索相关任务的写作内容
-        if task_id and '.' in task_id:
-            parent_id = '.'.join(task_id.split('.')[:-1])
-            all_queries.append(f"任务 {parent_id}")
-            all_queries.append(f"ID: {parent_id}")
-            # 添加层级标签
-            hierarchy_level = len(task_id.split('.'))
-            if hierarchy_level >= 3:
-                all_queries.append("#章级")
-            elif hierarchy_level >= 4:
-                all_queries.append("#场景级")
-            elif hierarchy_level >= 5:
-                all_queries.append("#节拍级")
-        
-        # 6. 从最新内容提取关键词 - 优先考虑最新内容
-        if latest_content and isinstance(latest_content, str):
-            content_keywords = self.keyword_extractor.extract_from_text(latest_content, top_k=25)
-            # 优先添加最新内容的关键词，放在检索词列表最前面
-            all_queries = content_keywords + all_queries
-            logger.info(f"Latest content keywords: {content_keywords[:10]}...")  # 记录部分关键词
+        if latest_content:
+            all_queries.extend(self.keyword_extractor.extract_from_text(latest_content))
 
-        # 8. 去重并优化查询词
+        if same_graph_dependent_designs:
+            all_queries.extend(self.keyword_extractor.extract_from_markdown(same_graph_dependent_designs))
+
         final_queries = list(dict.fromkeys(all_queries))
-        logger.info(f"Content search queries: {final_queries[:10]}...")  # 记录部分查询词
         
-        # 8. 执行检索 - 检索正文内容，使用更精准的过滤条件
-        all_results = self.search(final_queries, "text", limit=50)
-        
-        # 9. 结果处理和排序 - 优化排序策略
-        combined_results = []
-        seen_contents = set()
+        all_results = self.search(final_queries, "text", limit=500)
         
         # 按时间戳和相关性排序，优先最新且相关的内容
         sorted_results = sorted(all_results, key=lambda x: (
@@ -428,87 +380,18 @@ class Mem0:
             -x.get('metadata', {}).get('content_length', 0)
         ))
         
+        combined_results = []
+        seen_contents = set()
         for result in sorted_results:
             memory_content = result.get('memory', '')
             if memory_content and memory_content not in seen_contents:
-                # 过滤条件：确保是正文内容，包含关键标识符
-                content_markers = ["#正文内容", "正文内容", "场景", "对话", "情节", "主角", "角色", "剧情", "故事", "金手指"]
-                if len(memory_content) > 30 and any(marker in memory_content for marker in content_markers):
-                    combined_results.append(memory_content)
-                    seen_contents.add(memory_content)
-                # 限制最终结果数量，确保获取足够的上下文，同时避免上下文过长。
-                # 原值为50，可以根据需要调整，例如减少到30。
-                if len(combined_results) >= 30:
-                    break
-        
-        logger.info(f"Found {len(combined_results)} relevant content results")
+                combined_results.append(memory_content)
+                seen_contents.add(memory_content)
+        logger.info(f"get_story_content() combined_results=\n{combined_results}")
         return "\n\n".join(combined_results)
 
 
-    def _get_current_chapter_context(self, task_goal, task_id):
-        """
-        获取当前章节上下文，将"最新"、"近期"等时间描述词转化为具体的章节检索词
-        增强版：增加对"金手指"相关内容的检索支持
-        """
-        current_chapter_queries = []
-        
-        # 从任务目标中提取当前章节信息
-        level_patterns = [
-            (r'第(\d+)卷', '卷'),
-            (r'第(\d+)幕', '幕'), 
-            (r'第(\d+)章', '章'),
-            (r'场景(\d+)', '场景'),
-            (r'节拍(\d+)', '节拍')
-        ]
-        
-        current_levels = {}
-        for pattern, level_name in level_patterns:
-            matches = re.findall(pattern, task_goal)
-            if matches:
-                try:
-                    current_levels[level_name] = int(matches[-1])  # 取最后一个匹配的数字
-                except ValueError:
-                    logger.warning(f"Invalid number format for {level_name}: {matches[-1]}")
-        
-        # 基于任务ID推断当前层级
-        if task_id and '.' in task_id:
-            hierarchy_level = len(task_id.split('.'))
-            if hierarchy_level >= 3 and '章' not in current_levels:
-                # 尝试从父任务ID推断章节
-                parent_tasks = task_id.split('.')
-                if len(parent_tasks) >= 3:
-                    try:
-                        current_levels['章'] = int(parent_tasks[2])
-                    except (ValueError, IndexError):
-                        logger.warning(f"Failed to infer chapter from task_id: {task_id}")
-        
-        # 生成当前章节的检索词
-        for level_name, num in current_levels.items():
-            current_chapter_queries.append(f"第{num}{level_name}")
-            current_chapter_queries.append(f"#{level_name}级")
-            current_chapter_queries.append(f"#第{num}{level_name}")
-            current_chapter_queries.append(f"第{num}{level_name}金手指")  # 增加金手指相关检索
-            
-            # 添加前几个章节的内容（获取连续性上下文）
-            if level_name == '章' and num > 1:
-                for i in range(max(1, num-2), num):  # 前2章
-                    current_chapter_queries.append(f"第{i}章")
-                    current_chapter_queries.append(f"#第{i}章")
-                    current_chapter_queries.append(f"第{i}章金手指")  # 增加金手指相关检索
-            elif level_name == '幕' and num > 1:
-                current_chapter_queries.append(f"第{num-1}幕")
-                current_chapter_queries.append(f"#第{num-1}幕")
-                current_chapter_queries.append(f"第{num-1}幕金手指")  # 增加金手指相关检索
-            elif level_name == '卷' and num > 1:
-                current_chapter_queries.append(f"第{num-1}卷")
-                current_chapter_queries.append(f"#第{num-1}卷")
-                current_chapter_queries.append(f"第{num-1}卷金手指")  # 增加金手指相关检索
-        
-        # 增加通用金手指检索词
-        current_chapter_queries.append("金手指")
-        current_chapter_queries.append("#金手指")
-        
-        return current_chapter_queries
+
 
 
     def get_full_plan(self, task_info):
@@ -536,3 +419,9 @@ class Mem0:
                 continue
             task_goals.append(f"[{pid}]: {results[0].get('memory')}")
         return "\n".join(task_goals)
+
+
+
+
+
+

@@ -1,5 +1,5 @@
 # Core dependencies
-overrides>=7.4.0
+overrides
 class_registry
 griffe
 duckduckgo_search
@@ -12,7 +12,7 @@ dill
 botocore
 boto3
 urllib3
-google-generativeai>=0.3.0
+google-generativeai
 litellm[caching]
 mem0ai[graph]
 setuptools
@@ -20,6 +20,12 @@ langchain-memgraph
 diskcache
 python-dateutil
 jieba
+stopwordsiso
+keybert
+sentence-transformers
+nltk
+
+
 #qdrant-client
 #neo4j
 #langchain

@@ -1,5 +1,12 @@
 .kiro/
 .trae/
+.vscode/
+.git/
+.idea/
+.mypy_cache/
+.pytest_cache/
+.mypy_cache/
+.pytest_cache/
 .mem0/
 .litellm_cache/
 venv/
