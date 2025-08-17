@@ -1,4 +1,5 @@
 .kiro/
+.trae/
 .mem0/
 .litellm_cache/
 venv/
