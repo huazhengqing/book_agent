@@ -7,7 +7,7 @@ from pprint import pprint
 import json
 import requests
 from recursive.executor.actions.register import executor_register
-from recursive.llm.litellm_proxy import LiteLLMProxy
+from recursive.llm.litellm_proxy import llm_client
 from loguru import logger
 from recursive.utils.file_io import parse_hierarchy_tags_result
 from recursive.agent.prompts.base import prompt_register
@@ -36,7 +36,6 @@ class SearchAgent(BaseAgent):
     def __init__(self,
                  prompt_version,
                  action_executor: ActionExecutor,
-                 llm = LiteLLMProxy(),
                  protocol = None,
                  model = "gpt-4o",
                  max_turn: int = 10,
@@ -66,8 +65,7 @@ class SearchAgent(BaseAgent):
         # print(self.search_think_format)
         # exit()
         
-        super().__init__(
-            llm=llm, action_executor=action_executor, protocol=None)
+        super().__init__(action_executor=action_executor, protocol=None)
 
     def parse(
         self,
@@ -228,7 +226,7 @@ class SearchAgent(BaseAgent):
             
             cnt = 0
             while cnt < 100:
-                response = self._llm.call(messages = prompt["message"],
+                response = llm_client.call(messages = prompt["message"],
                                           overwrite_cache = True if cnt > 0 else False, **kwargs)[0]["message"]["content"]
                 try:
                     parsed_resp = self.parse(response)

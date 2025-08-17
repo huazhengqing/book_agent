@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from overrides import overrides
 import random
 import json
-from recursive.llm.litellm_proxy import LiteLLMProxy
+from recursive.llm.litellm_proxy import llm_client
 from copy import deepcopy
 from pprint import pprint
 import argparse
@@ -174,7 +174,6 @@ def process_one(item, model):
 
 
 def call_llm(system_message, prompt, parse_arg_dict, history_message = None, **other_inner_args):
-    llm = LiteLLMProxy()
     if system_message:
         message = [
             {"role": "system", "content": system_message},
@@ -186,23 +185,7 @@ def call_llm(system_message, prompt, parse_arg_dict, history_message = None, **o
     message.append({"role": "user", "content": prompt})
     
     model = other_inner_args.pop("model", "gpt-4o")
-    print("Use {}".format(model))
-    
-    
-    # if "claude" in model:
-    #     resp = llm.call(messages = message,
-    #                     model=model,
-    #                     verbose=False,
-    #                     no_cache = True,
-    #                     **other_inner_args)["content"][0]["text"]
-    # else:
-    #     resp = llm.call(messages = message,
-    #                     model=model,
-    #                     verbose=False,
-    #                     no_cache = True,
-    #                     **other_inner_args)[0]['message']['content']
-    
-    resp = llm.call(messages = message,
+    resp = llm_client.call(messages = message,
                     model=model,
                     verbose=False,
                     no_cache = True,

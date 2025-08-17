@@ -8,7 +8,6 @@ from loguru import logger
 import json
 from datetime import datetime
 import time
-from recursive.mem0_wrapper import Mem0
 
 
 # article = ""
@@ -32,7 +31,6 @@ class Memory:
 
         self.folder = ""
         
-        self.mem0 = Mem0(root_node, config)
 
 
     def add_article(self, content):

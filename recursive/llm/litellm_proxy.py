@@ -16,9 +16,7 @@ class LiteLLMProxy:
         # litellm.failure_callback = ["lunary"]
 
     def call(self, model=None, messages=None, no_cache=False, overwrite_cache=False, tools=None, temperature=None, **kwargs):
-        
         messages = copy.deepcopy(messages)
-        
         litellm_params = {
             'model': model,
             'messages': messages,
@@ -33,29 +31,19 @@ class LiteLLMProxy:
                 'openai/deepseek-ai/DeepSeek-R1-0528'
                 ]
         }
-        
         if temperature is not None:
             litellm_params['temperature'] = temperature
         if tools is not None:
             litellm_params['tools'] = tools
-        
         for key, value in kwargs.items():
             if key not in litellm_params and value is not None:
                 litellm_params[key] = value
-        
         # logger.info(f"LiteLLMProxy litellm_params={litellm_params}")
         response = litellm.completion(**litellm_params)
         return response.choices
 
-
-
-
-
-
     def call_fast(self, model=None, messages=None, no_cache=False, overwrite_cache=False, tools=None, temperature=None, **kwargs):
-            
         messages = copy.deepcopy(messages)
-        
         litellm_params = {
             'model': model,
             'messages': messages,
@@ -70,20 +58,20 @@ class LiteLLMProxy:
                 'openrouter/deepseek/deepseek-chat-v3-0324:free'
                 ]
         }
-        
         if temperature is not None:
             litellm_params['temperature'] = temperature
         if tools is not None:
             litellm_params['tools'] = tools
-            
         for key, value in kwargs.items():
             if key not in litellm_params and value is not None:
                 litellm_params[key] = value
-        
         # logger.info(f"call_fast() litellm_params={litellm_params}")
         response = litellm.completion(**litellm_params)
         return response.choices
 
+
+
+llm_client = LiteLLMProxy()
 
 
 

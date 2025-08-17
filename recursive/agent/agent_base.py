@@ -9,7 +9,7 @@ from recursive.utils.register import Register
 from recursive.executor.actions.register import executor_register, tool_register
 from recursive.executor.actions import ActionExecutor
 from recursive.utils.file_io import make_mappings
-from recursive.llm.litellm_proxy import LiteLLMProxy
+from recursive.llm.litellm_proxy import llm_client
 from recursive.utils.file_io import parse_hierarchy_tags_result
 from copy import deepcopy
 from pprint import pprint
@@ -32,8 +32,6 @@ class Agent(ABC):
         raise NotImplementedError()
 
     def call_llm(self, system_message, prompt, parse_arg_dict, history_message = None, **other_inner_args):
-        llm = LiteLLMProxy()
-        
         if system_message.strip() == "":
             message = []
         else:
@@ -48,7 +46,7 @@ class Agent(ABC):
         
         model = other_inner_args.pop("model", "gpt-4o")
         
-        resp = llm.call(messages = message,
+        resp = llm_client.call(messages = message,
                         model=model,
                         **other_inner_args)[0]
         # if "r1" in model:

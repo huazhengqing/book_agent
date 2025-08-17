@@ -3,7 +3,7 @@ import json
 import tqdm
 from concurrent.futures import ThreadPoolExecutor
 import threading
-from recursive.llm.litellm_proxy import LiteLLMProxy
+from recursive.llm.litellm_proxy import llm_client
 import time
 from recursive.utils.file_io import parse_hierarchy_tags_result
 from loguru import logger
@@ -26,8 +26,6 @@ class EvidenceSelectorAPIClientOpenAI:
         self.model = model
         self.language = language
         assert language in ("zh", "en")
-        # self.llm = LiteLLMProxy(verbose=False)
-        self.llm = LiteLLMProxy()
         self.max_parralel_requests = max_parralel_requests
         self.en_sys_pe = "You are an intelligent assistant specializing in information retrieval, equipped with powerful text analysis and logical reasoning abilities."
         
@@ -100,7 +98,7 @@ Agent正在通过多轮的搜索解决用户问题，你将对**其中一轮搜�
                     {"role": "user", "content": page["to_run_prompt"]},
                     
                 ]
-                response = self.llm.call(messages=msg, model=self.model, overwrite_cache = (cnt > 0 or cnt2 > 0))
+                response = llm_client.call(messages=msg, model=self.model, overwrite_cache = (cnt > 0 or cnt2 > 0))
                 if response is None:
                     page["select_response"] = ""
                     page["judgement"] =  0
@@ -179,7 +177,6 @@ class Summarizier:
         """
         self.language = language
         assert language in ("zh", "en")
-        self.llm = LiteLLMProxy()
         self.max_parralel_requests = max_parralel_requests
         self.model = model
         
@@ -267,7 +264,7 @@ Organize and extract as required, focusing solely on the webpage content itself.
                     {"role": "system", "content": self.en_sys_pe if self.language == "en" else self.zh_sys_pe},
                     {"role": "user", "content": page["to_run_prompt"]},
                 ]
-                response = self.llm.call(messages=msg, model=self.model, overwrite_cache=(cnt > 0))
+                response = llm_client.call(messages=msg, model=self.model, overwrite_cache=(cnt > 0))
                 
                 if response is None:
                     page["summarizier_response"] = ""

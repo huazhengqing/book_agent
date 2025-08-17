@@ -5,7 +5,7 @@ import re
 from recursive.cache import Cache
 import os
 from loguru import logger
-from recursive.llm.litellm_proxy import LiteLLMProxy
+from recursive.llm.litellm_proxy import llm_client
 import json
 from mem0 import Memory as Mem0Memory
 from datetime import datetime
@@ -20,27 +20,25 @@ from recursive.agent.prompts.story_zh.mem import (
 )
 
 
+
+
 class Mem0:
-    def __init__(self, root_node, config):
+    def __init__(self, writing_mode, language):
         # 确定写作模式（story, book, report）
-        self.writing_mode = config.get("writing_mode", "story")
-        self.language = config.get("language", "zh")
-        self.config = config
-        self.root_node = root_node
-        self.user_id_pre = f"{self.writing_mode}_{self.root_node.hashkey}"
+        self.writing_mode = writing_mode
+        self.language = language
         if self.language == "zh":
             self.keyword_extractor = keyword_extractor_zh
         elif self.language == "en":
             self.keyword_extractor = keyword_extractor_en
         else:
             raise ValueError(f"Unsupported language: {self.language}")
-        self.llm_client = LiteLLMProxy()
         self.fast_model = os.environ.get("fast_model")
         self.mem0_config = {
             # "vector_store": {
             #     "provider": "chroma",
             #     "config": {
-            #         "collection_name": f"story_{self.root_node.hashkey}",
+            #         "collection_name": f"story_{self.language}",
             #         "path": "./.mem0/chroma_db"
             #     }
             # },
@@ -139,8 +137,7 @@ class Mem0:
 
 
 
-
-    def add(self, content, content_type, task_info):
+    def add(self, hashkey, content, content_type, task_info):
         task_id = task_info.get("id")
         task_type = task_info.get("task_type")
         task_goal = task_info.get("goal")
@@ -179,16 +176,16 @@ class Mem0:
         logger.info(f"mem0 add() mem0_content=\n{mem0_content}\n mem_metadata=\n{mem_metadata}")
         self.client.add(
             mem0_content,
-            user_id=f"{self.user_id_pre}_{category}",
+            user_id=f"{self.writing_mode}_{hashkey}_{category}",
             metadata=mem_metadata
         )
 
-    def search(self, querys, category, limit=1, filters=None):
+    def search(self, hashkey, querys, category, limit=1, filters=None):
         query = " ".join(querys)
         logger.info(f"mem0 search() {category} query=\n{query}")
         results = self.client.search(
             query=query,
-            user_id=f"{self.user_id_pre}_{category}",
+            user_id=f"{self.writing_mode}_{hashkey}_{category}",
             limit=limit,
             filters=filters
         )
@@ -197,9 +194,9 @@ class Mem0:
         
 
 
-    def get_outer_graph_dependent(self, task_info, same_graph_dependent_designs, latest_content):
+    def get_outer_graph_dependent(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
         if self.writing_mode == "story":
-            return self.get_story_outer_graph_dependent(task_info, same_graph_dependent_designs, latest_content)
+            return self.get_story_outer_graph_dependent(hashkey, task_info, same_graph_dependent_designs, latest_content)
         elif self.writing_mode == "book":
             return ""
         elif self.writing_mode == "report":
@@ -209,9 +206,9 @@ class Mem0:
 
 
 
-    def get_content(self, task_info, same_graph_dependent_designs, latest_content):
+    def get_content(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
         if self.writing_mode == "story":
-            return self.get_story_content(task_info, same_graph_dependent_designs, latest_content)
+            return self.get_story_content(hashkey, task_info, same_graph_dependent_designs, latest_content)
         elif self.writing_mode == "book":
             return ""
         elif self.writing_mode == "report":
@@ -238,7 +235,7 @@ class Mem0:
             pass
         else:
             raise ValueError(f"writing_mode={self.writing_mode} not supported")
-        response = self.llm_client.call_fast(
+        response = llm_client.call_fast(
             model=self.fast_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
@@ -267,7 +264,7 @@ class Mem0:
             pass
         else:
             raise ValueError(f"writing_mode={self.writing_mode} not supported")
-        response = self.llm_client.call_fast(
+        response = llm_client.call_fast(
             model=self.fast_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
@@ -285,7 +282,7 @@ class Mem0:
 
 
 
-    def get_story_outer_graph_dependent(self, task_info, same_graph_dependent_designs, latest_content):
+    def get_story_outer_graph_dependent(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
         """
         替换 agent/agents/regular.py 中的 get_llm_output 中的 to_run_outer_graph_dependent
         """
@@ -314,7 +311,7 @@ class Mem0:
             "content_type": "design_result",
             "hierarchy_level": {"gte": 1, "lte": cur_hierarchy_level}
         }
-        all_results = self.search(final_queries, "design", limit=500, filters=filters)
+        all_results = self.search(hashkey, final_queries, "design", limit=500, filters=filters)
         
         
         # 按重要性和层级排序，优化排序策略
@@ -343,7 +340,7 @@ class Mem0:
 
 
 
-    def get_story_content(self, task_info, same_graph_dependent_designs, latest_content):
+    def get_story_content(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
         """
         替换 agent/agents/regular.py 中的 get_llm_output 中的 memory.article
         """
@@ -366,7 +363,7 @@ class Mem0:
 
         final_queries = list(dict.fromkeys(all_queries))
         
-        all_results = self.search(final_queries, "text", limit=500)
+        all_results = self.search(hashkey, final_queries, "text", limit=500)
         
         # 按时间戳和相关性排序，优先最新且相关的内容
         sorted_results = sorted(all_results, key=lambda x: (
@@ -394,7 +391,7 @@ class Mem0:
 
 
 
-    def get_full_plan(self, task_info):
+    def get_full_plan(self, hashkey, task_info):
         task_id = task_info.get("id", "")
         if not task_id:
             return ""
@@ -411,7 +408,7 @@ class Mem0:
         for pid in to_task_ids:
             results = self.client.search(
                 query=f"任务id为{pid}的详细目标(goal)",
-                user_id=f"{self.user_id_pre}_design",
+                user_id=f"{self.writing_mode}_{hashkey}_design",
                 limit=1
             )
             results = results if isinstance(results, list) else results.get('results', [])
@@ -419,6 +416,39 @@ class Mem0:
                 continue
             task_goals.append(f"[{pid}]: {results[0].get('memory')}")
         return "\n".join(task_goals)
+
+
+
+
+
+mem0_story_zh = Mem0("story", "zh")
+
+
+
+def get_mem0(config):
+    if config.writing_mode == "story":
+        if config.language == "zh":
+            return mem0_story_zh
+        elif config.language == "en":
+            return mem0_story_zh
+        else:
+            raise ValueError(f"Unsupported language: {config.language}")
+    elif config.writing_mode == "book":
+        if config.language == "zh":
+            return mem0_story_zh
+        elif config.language == "en":
+            return mem0_story_zh
+        else:
+            raise ValueError(f"Unsupported language: {config.language}")
+    elif config.writing_mode == "report":
+        if config.language == "zh":
+            return mem0_story_zh
+        elif config.language == "en":
+            return mem0_story_zh
+        else:
+            raise ValueError(f"Unsupported language: {config.language}")
+    else:
+        raise ValueError(f"writing_mode={config.writing_mode} not supported")
 
 
 

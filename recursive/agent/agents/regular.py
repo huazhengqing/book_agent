@@ -9,7 +9,6 @@ from recursive.utils.register import Register
 from recursive.executor.actions.register import executor_register, tool_register
 from recursive.executor.actions import ActionExecutor
 from recursive.utils.file_io import make_mappings
-from recursive.llm.litellm_proxy import LiteLLMProxy
 from recursive.utils.file_io import parse_hierarchy_tags_result
 from copy import deepcopy
 from pprint import pprint
@@ -19,7 +18,11 @@ from recursive.agent.prompts.base import prompt_register
 from recursive.executor.agents.claude_fc_react import SearchAgent
 from recursive.executor.actions.bing_browser import BingBrowser
 import re
-    
+from recursive.mem0_wrapper import get_mem0
+
+
+
+
 
 def get_llm_output(node, agent, memory, agent_type, overwrite_cache=False, *args, **kwargs):
     memory_info = memory.collect_node_run_info(node)
@@ -95,12 +98,16 @@ def get_llm_output(node, agent, memory, agent_type, overwrite_cache=False, *args
             ) if (depend_write_task is not None and len(depend_write_task) > 0) else "Not Provided"
         
 
+
     latest_content = memory.get_article_latest()
-    mem0_content = memory.mem0.get_content(node.task_info, to_run_same_graph_dependent, latest_content)
+    mem0_content = memory.article
+    if len(mem0_content) > 3000:
+        mem0_content = get_mem0(memory.config).get_content(memory.root_node.hashkey, node.task_info, to_run_same_graph_dependent, latest_content)
     outer_graph_dependent = to_run_outer_graph_dependent
-    if len(to_run_outer_graph_dependent) > 3000:
-        outer_graph_dependent = memory.mem0.get_outer_graph_dependent(node.task_info, to_run_same_graph_dependent, latest_content)
+    if len(outer_graph_dependent) > 3000:
+        outer_graph_dependent = get_mem0(memory.config).get_outer_graph_dependent(memory.root_node.hashkey, node.task_info, to_run_same_graph_dependent, latest_content)
     
+
     
     prompt_args = {
         'to_run_article_latest': latest_content,
@@ -127,6 +134,8 @@ def get_llm_output(node, agent, memory, agent_type, overwrite_cache=False, *args
         overwrite_cache = overwrite_cache,
         **inner_kwargs.get("llm_args", {})
     ) 
+
+
 
 
     content = ""
@@ -158,8 +167,11 @@ def get_llm_output(node, agent, memory, agent_type, overwrite_cache=False, *args
             content = llm_result["result"]
             content_type = "design_result"
     if content and content_type and node.task_info:
-        memory.mem0.add(content, content_type, node.task_info)
+        get_mem0(memory.config).add(memory.root_node.hashkey, content, content_type, node.task_info)
         
+
+
+
         
     return llm_result
 

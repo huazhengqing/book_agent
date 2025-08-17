@@ -4,19 +4,8 @@ from recursive.executor.schema import AgentReturn
 
 
 class BaseAgent:
-    """BaseAgent is the base class of all agents.
-
-    Args:
-        llm (BaseModel): the language model.
-        action_executor (ActionExecutor): the action executor.
-        protocol (object): the protocol of the agent, which is used to
-            generate the prompt of the agent and parse the response from
-            the llm.
-    """
-
-    def __init__(self, llm, action_executor: ActionExecutor,
+    def __init__(self, action_executor: ActionExecutor,
                  protocol: object) -> None:
-        self._llm = llm
         self._action_executor = action_executor
         self._protocol = protocol
 
