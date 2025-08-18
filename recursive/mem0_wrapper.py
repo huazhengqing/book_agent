@@ -16,6 +16,9 @@ from recursive.agent.prompts.story_zh.mem import (
 
 
 """
+# 引入 mem0 的终极目的
+- 解决全量传输内容导致的成本过高和token限制问题
+- 仅向 LLM 提供与当前任务最相关的信息，降低token消耗，同时保持写作上下文的连贯性
 # mem0_wrapper.py
 - 是 Mem0 内存系统的封装类，提供记忆添加、搜索和获取功能
 - 集成 Qdrant 向量数据库和 Memgraph 图数据库
@@ -37,15 +40,14 @@ from recursive.agent.prompts.story_zh.mem import (
     - 根据语言选择 keyword_extractor_zh 或 keyword_extractor_en 从最新内容和相关设计中提取关键词
 - 3. 内容检索
     - search 方法使用生成的查询词从向量数据库中检索相关内容
-    - get_story_outer_graph_dependent  是检索设计结果，它替换的是  agent/agents/regular.py  的 get_llm_output 中 的  to_run_outer_graph_dependent
-    - get_story_content  是检索小说已经写的正文内容，它替换的是  agent/agents/regular.py 中的 get_llm_output 中的 memory.article
+    - get_story_outer_graph_dependent  是检索设计结果，它的目标是替换  agent/agents/regular.py  中的 get_llm_output 中的  to_run_outer_graph_dependent
+    - get_story_content  是检索小说已经写的正文内容，它的目标是替换  agent/agents/regular.py 中的 get_llm_output 中的 memory.article
 - 4. 结果应用
     - 检索结果作为上下文提供给 LLM 用于生成新的内容或设计
     - 检索结果在 agent/agents/regular.py 中的 get_llm_output 中的 prompt_args 中组装为上下文，传入 agent/prompts/story_zh 中的 planning.py、reasoner.py、writer.py
 
-
-
-从工作流程的角度来考虑, 分析 mem0_wrapper.py   keyword_extractor_zh.py     keyword_extractor_en.py  是否能很好的满足需求
+# 问题
+项目目标是创作出爆款的超长篇（500万字）网络小说，请分析 mem0 相关代码，是否能达能目标？？？
 
 
 """
@@ -308,6 +310,16 @@ class Mem0:
         """
         检索设计结果
         替换 agent/agents/regular.py 中的 get_llm_output 中的 to_run_outer_graph_dependent
+        工作流程：
+            1. 动态查询生成 ：通过 _generate_design_queries 方法，使用轻量级 LLM 根据任务目标和上下文生成搜索查询词
+            2. 关键词增强 ：
+                - 将任务目标也作为查询词
+                - 从最新内容中提取关键词
+                - 从相关设计中提取关键词
+            3. 内容检索 ：调用 search 方法从向量数据库中检索相关设计内容
+            4. 结果优化 ：
+                - 按层级（越高越重要）、相关度评分、内容长度和时间戳排序
+                - 去重处理，避免重复内容
         """
         task_goal = task_info.get('goal', '')
         task_type = task_info.get('task_type', '')
@@ -321,11 +333,9 @@ class Mem0:
 
         all_queries.append(task_goal)
 
-        if latest_content:
-            all_queries.extend(self.get_keyword_extractor().extract_from_text(latest_content))
-
-        if same_graph_dependent_designs:
-            all_queries.extend(self.get_keyword_extractor().extract_from_markdown(same_graph_dependent_designs))
+        combined_content = f"{latest_content}\n\n{same_graph_dependent_designs}"
+        if combined_content:
+            all_queries.extend(self.get_keyword_extractor().extract_from_markdown(combined_content))
 
         final_queries = list(dict.fromkeys(all_queries))
         
@@ -335,7 +345,6 @@ class Mem0:
             "hierarchy_level": {"gte": 1, "lte": cur_hierarchy_level}
         }
         all_results = self.search(hashkey, final_queries, "design", limit=500, filters=filters)
-        
         
         # 按重要性和层级排序，优化排序策略
         sorted_results = sorted(all_results, key=lambda x: (
@@ -375,11 +384,9 @@ class Mem0:
 
         all_queries.append(task_goal)
 
-        if latest_content:
-            all_queries.extend(self.get_keyword_extractor().extract_from_text(latest_content))
-
-        if same_graph_dependent_designs:
-            all_queries.extend(self.get_keyword_extractor().extract_from_markdown(same_graph_dependent_designs))
+        combined_content = f"{latest_content}\n\n{same_graph_dependent_designs}"
+        if combined_content:
+            all_queries.extend(self.get_keyword_extractor().extract_from_markdown(combined_content))
 
         final_queries = list(dict.fromkeys(all_queries))
         

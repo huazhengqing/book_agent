@@ -3,6 +3,39 @@ from recursive.agent.prompts.base import PromptTemplate
 from recursive.agent.prompts.base import prompt_register
 
 
+"""
+# 项目实现和执行流程
+用户输入 → StoryAtomZh (原子判定)
+    ↓
+如果复杂 → StoryPlanningZh (任务分解)
+    ↓
+分解后的子任务 → 递归执行：
+    ├── think任务 → StoryReasonerZh (设计分析)
+    └── write任务 → StoryWriterZh (内容创作)
+    ↓
+结果聚合 → 最终输出
+
+# writer.py
+- 写小说正文
+- 根据设计结果，完成写作任务
+
+## 输出示例：
+<example>
+## 第x卷 xxx | 第x幕 xxx | 第x章 xxx | 场景x xxx | 节拍x xxx
+
+[正文内容]
+</example>
+
+# 问题
+项目目标是创作出爆款的超长篇（500万字）网络小说，示例是提示词生成的，请分析是否能达能目标？？
+如何改进提示词？
+
+
+"""
+
+
+
+
 @prompt_register.register_module()
 class StoryWriterZh(PromptTemplate):
     def __init__(self) -> None:
@@ -113,3 +146,22 @@ class StoryWriterZh(PromptTemplate):
 """.strip()
         
         super().__init__(system_message, content_template)
+
+
+
+"""
+# StoryWriterZh  初版的提示词：
+```
+你是一名专业且富有创新精神的作家，正与其他作家合作创作一部符合用户要求的小说。
+
+### 要求：
+- 从故事之前的结尾处开始创作，与已有文本的写作风格、词汇和整体氛围保持一致。根据写作要求自然地完成你负责的部分，不得重新解读或重新描述已涉及的细节或事件。
+- 密切关注已有的小说设计结论。
+- 运用修辞、语言和文学手法（如歧义、头韵等）营造引人入胜的效果。
+- 避免平淡或重复的语句（除非是有意为之，以达到叙事、主题或语言方面的效果）。
+- 使用丰富多样的语言：变换句子结构、措辞和词汇。
+- 除非绝对必要，否则避免使用总结性、解释性或说明性的内容或句子。
+- 确保情节或描述不存在脱节感或突兀感。你可以撰写一些过渡性内容，以与已有内容保持完全的连贯性。
+```
+"""
+
