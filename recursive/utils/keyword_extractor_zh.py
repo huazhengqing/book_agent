@@ -15,6 +15,11 @@ import hashlib
 import multiprocessing
 
 
+# - 中文关键词提取器，基于 KeyBERT 和 jieba 库
+# - 支持从文本和 Markdown 中提取关键词
+# - 实现文本分块处理、预处理和缓存功能
+# - 使用 BAAI/bge-small-zh 模型进行中文语义理解
+
 # 中文：
 # shibing624/text2vec-base-chinese（专为中文优化的通用模型）
 # BAAI/bge-small-zh（中文语义理解能力强，适合长文本）
@@ -23,13 +28,12 @@ import multiprocessing
 # xlm-r-bert-base-nli-stsb-mean-tokens（支持语言更多，精度较高）
 
 
-
-
 class KeywordExtractorZh:
     def __init__(self):
-        self.model = KeyBERT(model="BAAI/bge-small-zh")
+        self.model = None
         self.chunk_size = 700  # 中文字符数 (约对应 450-500 tokens)
         self.chunk_overlap = 100  # 中文字符重叠数
+        self._model_lock = threading.Lock()
 
         threads = min(multiprocessing.cpu_count(), 4)
         jieba.enable_parallel(threads)
@@ -47,6 +51,12 @@ class KeywordExtractorZh:
         except:
             pass
 
+    def _ensure_model_initialized(self):
+        if not self.model:
+            with self._model_lock:
+                if not self.model:
+                    # self.model = KeyBERT(model="BAAI/bge-small-zh", nr_processes=os.cpu_count()//2)
+                    self.model = KeyBERT(model="./models/bge-small-zh", nr_processes=os.cpu_count()//2)
 
     def extract_from_text(self, text: str, top_k: int = 30) -> List[str]:
         """
@@ -58,6 +68,8 @@ class KeywordExtractorZh:
         """
         if not text or not text.strip():
             return []
+
+        self._ensure_model_initialized()
 
         text_hash = hashlib.blake2b(text.encode('utf-8'), digest_size=32).hexdigest()
         cache_key = text_hash
@@ -119,6 +131,8 @@ class KeywordExtractorZh:
         if not markdown_content or not markdown_content.strip():
             return []
 
+        self._ensure_model_initialized()
+        
         text_content = self.clean_markdown(markdown_content)
         return self.extract_from_text(text_content, top_k)
 

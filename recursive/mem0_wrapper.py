@@ -1,15 +1,10 @@
 #coding: utf8
-from copy import deepcopy
-from collections import defaultdict
-import re
-from recursive.cache import Cache
 import os
 from loguru import logger
 from recursive.llm.litellm_proxy import llm_client
 import json
 from mem0 import Memory as Mem0Memory
 from datetime import datetime
-import time
 from recursive.utils.keyword_extractor_zh import keyword_extractor_zh
 from recursive.utils.keyword_extractor_en import keyword_extractor_en
 from recursive.agent.prompts.story_zh.mem import (
@@ -20,6 +15,40 @@ from recursive.agent.prompts.story_zh.mem import (
 )
 
 
+"""
+# mem0_wrapper.py
+- 是 Mem0 内存系统的封装类，提供记忆添加、搜索和获取功能
+- 集成 Qdrant 向量数据库和 Memgraph 图数据库
+- mem0的文档 docs/llms-mem0.txt
+- 分类存储：按 正文内容 和 设计方案 分别存储
+- 自定义提示词：针对小说创作定制了事实提取和更新提示词，在 agent/prompts/story_zh 中的 mem.py 中的 mem_story_fact  mem_story_update
+- 支持 story 、 book 、 report 三种写作模式和多语言支持
+- 根据语言选择对应的关键词提取器
+- 实现动态查询生成，用于检索设计库和正文库
+## 工作流程
+- 1. 记忆存储
+    - mem0_wrapper.py 的 add 方法将内容（小说正文，分解结果，设计结果，任务更新）与元数据存入 Mem0
+    - 使用自定义提示词：agent/prompts/story_zh 中的 mem.py 中的 mem_story_fact、mem_story_update 进行事实提取和更新
+    - 故事正文是由 agent/prompts/story_zh 中的 writer.py 生成的
+    - 设计结果是由 agent/prompts/story_zh 中的 reasoner.py 生成的
+    - 任务分解更新是由 agent/prompts/story_zh 中的 planning.py 生成的
+- 2. 查询生成
+    - 通过 _generate_design_queries 和 _generate_text_queries 方法生成动态查询
+    - 根据语言选择 keyword_extractor_zh 或 keyword_extractor_en 从最新内容和相关设计中提取关键词
+- 3. 内容检索
+    - search 方法使用生成的查询词从向量数据库中检索相关内容
+    - get_story_outer_graph_dependent  是检索设计结果，它替换的是  agent/agents/regular.py  的 get_llm_output 中 的  to_run_outer_graph_dependent
+    - get_story_content  是检索小说已经写的正文内容，它替换的是  agent/agents/regular.py 中的 get_llm_output 中的 memory.article
+- 4. 结果应用
+    - 检索结果作为上下文提供给 LLM 用于生成新的内容或设计
+    - 检索结果在 agent/agents/regular.py 中的 get_llm_output 中的 prompt_args 中组装为上下文，传入 agent/prompts/story_zh 中的 planning.py、reasoner.py、writer.py
+
+
+
+从工作流程的角度来考虑, 分析 mem0_wrapper.py   keyword_extractor_zh.py     keyword_extractor_en.py  是否能很好的满足需求
+
+
+"""
 
 
 class Mem0:
@@ -27,12 +56,7 @@ class Mem0:
         # 确定写作模式（story, book, report）
         self.writing_mode = writing_mode
         self.language = language
-        if self.language == "zh":
-            self.keyword_extractor = keyword_extractor_zh
-        elif self.language == "en":
-            self.keyword_extractor = keyword_extractor_en
-        else:
-            raise ValueError(f"Unsupported language: {self.language}")
+        self.keyword_extractor = None
         self.fast_model = os.environ.get("fast_model")
         self.mem0_config = {
             # "vector_store": {
@@ -120,22 +144,34 @@ class Mem0:
             self.config["custom_update_memory_prompt"] = ""
         else:
             raise ValueError(f"writing_mode={self.writing_mode} not supported")
-        # temp = os.getenv("OPENROUTER_API_KEY")
-        # if self.mem0_config["llm"]["provider"] == "openai":
-        #     # os.environ["OPENROUTER_API_KEY"] = ""
-        #     if os.environ.get("OPENROUTER_API_KEY"):
-        #         self.mem0_config["llm"]["config"].update({
-        #             "model": "deepseek/deepseek-chat-v3-0324:free"
-        #         })
-        #     else:
-        #         self.mem0_config["llm"]["config"].update({
-        #             "model": "deepseek-ai/DeepSeek-V3"
-        #         })
-        self.client = Mem0Memory.from_config(config_dict=self.mem0_config)
-        # os.environ["OPENROUTER_API_KEY"] = temp
+        self.client = None
         
+    def get_client(self):
+        if not self.client:
+            # temp = os.getenv("OPENROUTER_API_KEY")
+            # if self.mem0_config["llm"]["provider"] == "openai":
+            #     # os.environ["OPENROUTER_API_KEY"] = ""
+            #     if os.environ.get("OPENROUTER_API_KEY"):
+            #         self.mem0_config["llm"]["config"].update({
+            #             "model": "deepseek/deepseek-chat-v3-0324:free"
+            #         })
+            #     else:
+            #         self.mem0_config["llm"]["config"].update({
+            #             "model": "deepseek-ai/DeepSeek-V3"
+            #         })
+            self.client = Mem0Memory.from_config(config_dict=self.mem0_config)
+            # os.environ["OPENROUTER_API_KEY"] = temp
+        return self.client
 
-
+    def get_keyword_extractor(self):
+        if not self.keyword_extractor:
+            if self.language == "zh":
+                self.keyword_extractor = keyword_extractor_zh
+            elif self.language == "en":
+                self.keyword_extractor = keyword_extractor_en
+            else:
+                raise ValueError(f"Unsupported language: {self.language}")
+        return self.keyword_extractor
 
     def add(self, hashkey, content, content_type, task_info):
         task_id = task_info.get("id")
@@ -174,7 +210,7 @@ class Mem0:
         }
         
         logger.info(f"mem0 add() mem0_content=\n{mem0_content}\n mem_metadata=\n{mem_metadata}")
-        self.client.add(
+        self.get_client().add(
             mem0_content,
             user_id=f"{self.writing_mode}_{hashkey}_{category}",
             metadata=mem_metadata
@@ -183,7 +219,7 @@ class Mem0:
     def search(self, hashkey, querys, category, limit=1, filters=None):
         query = " ".join(querys)
         logger.info(f"mem0 search() {category} query=\n{query}")
-        results = self.client.search(
+        results = self.get_client().search(
             query=query,
             user_id=f"{self.writing_mode}_{hashkey}_{category}",
             limit=limit,
@@ -192,8 +228,6 @@ class Mem0:
         logger.info(f"mem0 search() results=\n{results}")
         return results
         
-
-
     def get_outer_graph_dependent(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
         if self.writing_mode == "story":
             return self.get_story_outer_graph_dependent(hashkey, task_info, same_graph_dependent_designs, latest_content)
@@ -204,8 +238,6 @@ class Mem0:
         else:
             raise ValueError(f"writing_mode={self.writing_mode} not supported")
 
-
-
     def get_content(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
         if self.writing_mode == "story":
             return self.get_story_content(hashkey, task_info, same_graph_dependent_designs, latest_content)
@@ -215,12 +247,6 @@ class Mem0:
             return ""
         else:
             raise ValueError(f"writing_mode={self.writing_mode} not supported")
-
-
-
-
-
-
 
     def _generate_design_queries(self, task_goal, context_str):
         """
@@ -250,7 +276,6 @@ class Mem0:
             logger.error(f"Failed to decode JSON from LLM for design queries. Content: {content}")
         return []
 
-
     def _generate_text_queries(self, task_goal, context_str):
         """
         使用轻量级LLM根据任务和上下文动态生成用于检索“正文库”的搜索查询词。
@@ -279,11 +304,9 @@ class Mem0:
             logger.error(f"Failed to decode JSON from LLM for text queries. Content: {content}")
         return []
     
-
-
-
     def get_story_outer_graph_dependent(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
         """
+        检索设计结果
         替换 agent/agents/regular.py 中的 get_llm_output 中的 to_run_outer_graph_dependent
         """
         task_goal = task_info.get('goal', '')
@@ -299,10 +322,10 @@ class Mem0:
         all_queries.append(task_goal)
 
         if latest_content:
-            all_queries.extend(self.keyword_extractor.extract_from_text(latest_content))
+            all_queries.extend(self.get_keyword_extractor().extract_from_text(latest_content))
 
         if same_graph_dependent_designs:
-            all_queries.extend(self.keyword_extractor.extract_from_markdown(same_graph_dependent_designs))
+            all_queries.extend(self.get_keyword_extractor().extract_from_markdown(same_graph_dependent_designs))
 
         final_queries = list(dict.fromkeys(all_queries))
         
@@ -336,12 +359,9 @@ class Mem0:
         logger.info(f"get_story_outer_graph_dependent() combined_results=\n{combined_results}")
         return "\n\n".join(combined_results)
 
-
-
-
-
     def get_story_content(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
         """
+        检索小说已经写的正文内容
         替换 agent/agents/regular.py 中的 get_llm_output 中的 memory.article
         """
         task_goal = task_info.get('goal', '')
@@ -356,10 +376,10 @@ class Mem0:
         all_queries.append(task_goal)
 
         if latest_content:
-            all_queries.extend(self.keyword_extractor.extract_from_text(latest_content))
+            all_queries.extend(self.get_keyword_extractor().extract_from_text(latest_content))
 
         if same_graph_dependent_designs:
-            all_queries.extend(self.keyword_extractor.extract_from_markdown(same_graph_dependent_designs))
+            all_queries.extend(self.get_keyword_extractor().extract_from_markdown(same_graph_dependent_designs))
 
         final_queries = list(dict.fromkeys(all_queries))
         
@@ -387,10 +407,6 @@ class Mem0:
         logger.info(f"get_story_content() combined_results=\n{combined_results}")
         return "\n\n".join(combined_results)
 
-
-
-
-
     def get_full_plan(self, hashkey, task_info):
         task_id = task_info.get("id", "")
         if not task_id:
@@ -406,7 +422,7 @@ class Mem0:
 
         task_goals = []
         for pid in to_task_ids:
-            results = self.client.search(
+            results = self.get_client().search(
                 query=f"任务id为{pid}的详细目标(goal)",
                 user_id=f"{self.writing_mode}_{hashkey}_design",
                 limit=1
@@ -419,10 +435,12 @@ class Mem0:
 
 
 
-
-
 mem0_story_zh = Mem0("story", "zh")
-
+mem0_story_en = Mem0("story", "en")
+mem0_book_zh = Mem0("book", "zh")
+mem0_book_en = Mem0("book", "en")
+mem0_report_zh = Mem0("report", "zh")
+mem0_report_en = Mem0("report", "en")
 
 
 def get_mem0(config):
@@ -430,21 +448,21 @@ def get_mem0(config):
         if config.language == "zh":
             return mem0_story_zh
         elif config.language == "en":
-            return mem0_story_zh
+            return mem0_story_en
         else:
             raise ValueError(f"Unsupported language: {config.language}")
     elif config.writing_mode == "book":
         if config.language == "zh":
-            return mem0_story_zh
+            return mem0_book_zh
         elif config.language == "en":
-            return mem0_story_zh
+            return mem0_book_en
         else:
             raise ValueError(f"Unsupported language: {config.language}")
     elif config.writing_mode == "report":
         if config.language == "zh":
-            return mem0_story_zh
+            return mem0_report_zh
         elif config.language == "en":
-            return mem0_story_zh
+            return mem0_report_en
         else:
             raise ValueError(f"Unsupported language: {config.language}")
     else:

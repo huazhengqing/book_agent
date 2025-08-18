@@ -9,6 +9,8 @@
 .pytest_cache/
 .mem0/
 .litellm_cache/
+.models/
+models/
 venv/
 bak/
 tmp/

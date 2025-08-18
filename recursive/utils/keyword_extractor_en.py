@@ -13,7 +13,10 @@ import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
 
 
-
+# - 英文关键词提取器，基于 KeyBERT 和 NLTK 库
+# - 支持从文本和 Markdown 中提取关键词
+# - 实现文本分块处理、预处理和缓存功能
+# - 使用 all-MiniLM-L6-v2 模型进行英文语义理解
 
 # 英文：
 # all-MiniLM-L6-v2（轻量高效，适合大多数场景）
@@ -23,18 +26,15 @@ from nltk.tokenize import word_tokenize, sent_tokenize
 # xlm-r-bert-base-nli-stsb-mean-tokens（支持语言更多，精度较高）
 
 
-
-
 class KeywordExtractorEn:
     def __init__(self):
-        self.model = KeyBERT(model="all-MiniLM-L6-v2", nr_processes=os.cpu_count()//2)
+        self.model = None
         self.chunk_size = 1500  # 英文字符数 (约对应 450-500 tokens)
         self.chunk_overlap = 200  # 英文字符重叠数
+        self._model_lock = threading.Lock()
 
-        try:
-            nltk.data.find('tokenizers/punkt')
-        except LookupError:
-            nltk.download('punkt', quiet=True)
+        self._punkt_downloaded = False
+        self._download_lock = threading.Lock()
 
         self.base_stop_words = set(stopwordsiso.stopwords("en"))
 
@@ -43,6 +43,22 @@ class KeywordExtractorEn:
         os.makedirs(cache_dir, exist_ok=True)
         self.cache = dc.Cache(cache_dir, size_limit=2 * 1024 * 1024 * 1024)
 
+    def _ensure_model_initialized(self):
+        if not self.model:
+            with self._model_lock:
+                if not self.model:
+                    # self.model = KeyBERT(model="all-MiniLM-L6-v2", nr_processes=os.cpu_count()//2)
+                    self.model = KeyBERT(model="./models/all-MiniLM-L6-v2", nr_processes=os.cpu_count()//2)
+
+    def _ensure_punkt_downloaded(self):
+        if not self._punkt_downloaded:
+            with self._download_lock:
+                if not self._punkt_downloaded:
+                    try:
+                        nltk.data.find('tokenizers/punkt')
+                    except LookupError:
+                        nltk.download('punkt', quiet=True)
+                    self._punkt_downloaded = True
 
     def extract_from_text(self, text: str, top_k: int = 30) -> List[str]:
         """
@@ -54,6 +70,8 @@ class KeywordExtractorEn:
         """
         if not text or not text.strip():
             return []
+        self._ensure_model_initialized()
+        self._ensure_punkt_downloaded()
 
         text_hash = hashlib.blake2b(text.encode('utf-8'), digest_size=32).hexdigest()
         cache_key = text_hash
@@ -112,7 +130,8 @@ class KeywordExtractorEn:
         """
         if not markdown_content or not markdown_content.strip():
             return []
-
+        self._ensure_model_initialized()
+        self._ensure_punkt_downloaded()
         text_content = self.clean_markdown(markdown_content)
         return self.extract_from_text(text_content, top_k)
 
@@ -121,13 +140,6 @@ class KeywordExtractorEn:
         text = re.sub(r'<[^>]+>', '', html)
         text = re.sub(r'\s+', ' ', text).strip()
         return text
-
-    # def clean_markdown(self, markdown_text: str) -> str:
-    #     text = re.sub(r'#{1,6}\s*', '', markdown_text)  # 移除标题
-    #     text = re.sub(r'\*\*?|__?', '', text)          # 移除粗/斜体
-    #     text = re.sub(r'\[.*?\]\(.*?\)', '', text)    # 移除链接
-    #     text = re.sub(r'\s+', ' ', text).strip()
-    #     return text
 
     def split_long_text(self, text):
         # 基于NLTK的句子感知分块

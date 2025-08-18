@@ -41,13 +41,28 @@ echo
 
 echo "Upgrading pip..."
 # pip install --upgrade pip
-# pip install nltk && python -m nltk.downloader punkt
-# pip install --upgrade sentence-transformers nltk
 echo
+
+
+# pip install --upgrade huggingface_hub
+
+
 
 echo "Installing all project dependencies..."
 pip install -r requirements.txt
 echo
+
+
+# python3 -m sentence_transformers download BAAI/bge-small-zh
+# python3 -m sentence_transformers download all-MiniLM-L6-v2
+# python3 -m nltk.downloader punkt
+# python3 download.py
+
+
+HF_ENDPOINT=https://hf-mirror.com hf download BAAI/bge-small-zh --local-dir ./models/bge-small-zh 
+HF_ENDPOINT=https://hf-mirror.com hf download sentence-transformers/all-MiniLM-L6-v2 --local-dir ./models/all-MiniLM-L6-v2 
+
+
 
 echo "Installing main package in development mode..."
 pip install -v -e .

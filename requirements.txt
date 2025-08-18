@@ -24,6 +24,9 @@ stopwordsiso
 keybert
 sentence-transformers
 nltk
+huggingface_hub
+
+
 
 
 #qdrant-client
