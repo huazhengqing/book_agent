@@ -10,6 +10,8 @@
 .mem0/
 .litellm_cache/
 .models/
+.env
+api_key.env
 models/
 venv/
 bak/
@@ -25,6 +27,6 @@ recursive/.litellm_cache/
 recursive/.mem0/
 *.pyc
 *.log
-api_key.env
+
 output.jsonl
 done.txt

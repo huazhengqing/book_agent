@@ -13,6 +13,9 @@ from recursive.agent.prompts.story_zh.mem import (
     mem_story_design_queries,
     mem_story_text_queries
 )
+import diskcache
+import hashlib
+from datetime import datetime
 
 
 """
@@ -47,7 +50,14 @@ from recursive.agent.prompts.story_zh.mem import (
     - 检索结果在 agent/agents/regular.py 中的 get_llm_output 中的 prompt_args 中组装为上下文，传入 agent/prompts/story_zh 中的 planning.py、reasoner.py、writer.py
 
 # 问题
-项目目标是创作出爆款的超长篇（500万字）网络小说，请分析 mem0 相关代码，是否能达能目标？？？
+
+分析 mem0_wrapper.py，撰写一份全面的分析报告，检查是否存在逻辑不一致之处，指出可以改进的地方，如何确保它们更好地协同？
+
+
+
+图数据库潜力未完全发挥：当前 mem0_wrapper 的代码主要体现了向量检索的能力。虽然配置了 Memgraph，但图数据库在分析任务依赖、角色关系、情节脉络等结构化信息上的强大能力尚未在封装层显式调用。例如 get_full_plan 通过多次搜索来重建规划链，这或许可以通过一次高效的图查询来完成。
+
+
 
 
 """
@@ -136,17 +146,27 @@ class Mem0:
             # "history_db_path": "./.mem0/history.db"
         }
         if self.writing_mode == "story":
-            self.config["custom_fact_extraction_prompt"] = mem_story_fact
-            self.config["custom_update_memory_prompt"] = mem_story_update
+            self.mem0_config["custom_fact_extraction_prompt"] = mem_story_fact
+            self.mem0_config["custom_update_memory_prompt"] = mem_story_update
         elif self.writing_mode == "book":
-            self.config["custom_fact_extraction_prompt"] = ""
-            self.config["custom_update_memory_prompt"] = ""
+            self.mem0_config["custom_fact_extraction_prompt"] = "" # TODO: Add book-specific fact extraction prompt
+            self.mem0_config["custom_update_memory_prompt"] = "" # TODO: Add book-specific memory update prompt
         elif self.writing_mode == "report":
-            self.config["custom_fact_extraction_prompt"] = ""
-            self.config["custom_update_memory_prompt"] = ""
+            self.mem0_config["custom_fact_extraction_prompt"] = "" # TODO: Add report-specific fact extraction prompt
+            self.mem0_config["custom_update_memory_prompt"] = "" # TODO: Add report-specific memory update prompt
         else:
             raise ValueError(f"writing_mode={self.writing_mode} not supported")
+
         self.client = None
+
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        cache_dir = os.path.join(current_dir, ".cache", "mem0_text")
+        os.makedirs(cache_dir, exist_ok=True)
+        self.cache_text = diskcache.Cache(cache_dir, size_limit=1024 * 1024 * 300)
+
+        cache_dir = os.path.join(current_dir, ".cache", "mem0_design")
+        os.makedirs(cache_dir, exist_ok=True)
+        self.cache_design = diskcache.Cache(cache_dir, size_limit=1024 * 1024 * 300)
         
     def get_client(self):
         if not self.client:
@@ -208,7 +228,7 @@ class Mem0:
             "parent_task_id": parent_task_id,
             "dependency": dependency_str,
             "content_length": len(mem0_content),
-            "content_hash": hash(mem0_content) % 10000
+            "content_hash": hashlib.md5(mem0_content.encode('utf-8')).hexdigest()
         }
         
         logger.info(f"mem0 add() mem0_content=\n{mem0_content}\n mem_metadata=\n{mem_metadata}")
@@ -217,6 +237,11 @@ class Mem0:
             user_id=f"{self.writing_mode}_{hashkey}_{category}",
             metadata=mem_metadata
         )
+        
+        if category == "design":
+            self.cache_design.clear()
+        if category == "text":
+            self.cache_text.clear()
 
     def search(self, hashkey, querys, category, limit=1, filters=None):
         query = " ".join(querys)
@@ -231,24 +256,42 @@ class Mem0:
         return results
         
     def get_outer_graph_dependent(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
+        s = f"{hashkey}\n{task_info}\n{same_graph_dependent_designs}\n{latest_content}"
+        cache_key = hashlib.blake2b(s.encode('utf-8'), digest_size=32).hexdigest()
+        cached_result = self.cache_design.get(cache_key)
+        if cached_result is not None:
+            return cached_result
+
+        ret = ""
         if self.writing_mode == "story":
-            return self.get_story_outer_graph_dependent(hashkey, task_info, same_graph_dependent_designs, latest_content)
+            ret = self.get_story_outer_graph_dependent(hashkey, task_info, same_graph_dependent_designs, latest_content)
         elif self.writing_mode == "book":
-            return ""
+            ret = ""
         elif self.writing_mode == "report":
-            return ""
+            ret = ""
         else:
             raise ValueError(f"writing_mode={self.writing_mode} not supported")
+        self.cache_design.set(cache_key, ret)
+        return ret
 
     def get_content(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
+        s = f"{hashkey}\n{task_info}\n{same_graph_dependent_designs}\n{latest_content}"
+        cache_key = hashlib.blake2b(s.encode('utf-8'), digest_size=32).hexdigest()
+        cached_result = self.cache_text.get(cache_key)
+        if cached_result is not None:
+            return cached_result
+
+        ret = ""
         if self.writing_mode == "story":
-            return self.get_story_content(hashkey, task_info, same_graph_dependent_designs, latest_content)
+            ret = self.get_story_content(hashkey, task_info, same_graph_dependent_designs, latest_content)
         elif self.writing_mode == "book":
-            return ""
+            ret = ""
         elif self.writing_mode == "report":
-            return ""
+            ret = ""
         else:
             raise ValueError(f"writing_mode={self.writing_mode} not supported")
+        self.cache_text.set(cache_key, ret)
+        return ret
 
     def _generate_design_queries(self, task_goal, context_str):
         """
@@ -346,17 +389,17 @@ class Mem0:
         }
         all_results = self.search(hashkey, final_queries, "design", limit=500, filters=filters)
         
-        # 按重要性和层级排序，优化排序策略
-        sorted_results = sorted(all_results, key=lambda x: (
-            # 优先级1：层级越高越重要
-            -x.get('metadata', {}).get('hierarchy_level', 0),
-            # 优先级2：与当前任务的相关度评分
-            -x.get('score', 0),
-            # 优先级3：内容长度（更详细的设计）
-            -x.get('metadata', {}).get('content_length', 0),
-            # 优先级4：时间戳（更新的设计）
-            -x.get('metadata', {}).get('timestamp', '')
-        ))
+        # 按重要性和层级排序，优化排序策略。使用 reverse=True 替代对数值和字符串使用负号。
+        def sort_key_design(x):
+            meta = x.get('metadata', {})
+            # 解析时间戳，如果不存在或格式错误，则使用一个很早的时间
+            ts_str = meta.get('timestamp', '')
+            try:
+                timestamp = datetime.fromisoformat(ts_str) if ts_str else datetime.min
+            except (ValueError, TypeError):
+                timestamp = datetime.min
+            return meta.get('hierarchy_level', 0), x.get('score', 0), meta.get('content_length', 0), timestamp
+        sorted_results = sorted(all_results, key=sort_key_design, reverse=True)
         
         combined_results = []
         seen_contents = set()
@@ -392,17 +435,16 @@ class Mem0:
         
         all_results = self.search(hashkey, final_queries, "text", limit=500)
         
-        # 按时间戳和相关性排序，优先最新且相关的内容
-        sorted_results = sorted(all_results, key=lambda x: (
-            # 优先级1：时间戳（最新内容）倒序排列
-            -x.get('metadata', {}).get('timestamp', ''),
-            # 优先级2：与当前任务的相关度评分
-            -x.get('score', 0),
-            # 优先级3：层级（更具体的内容）
-            -x.get('metadata', {}).get('hierarchy_level', 0),
-            # 优先级4：内容长度（更详细的内容）
-            -x.get('metadata', {}).get('content_length', 0)
-        ))
+        # 按时间戳和相关性排序，优先最新且相关的内容。使用 reverse=True。
+        def sort_key_text(x):
+            meta = x.get('metadata', {})
+            ts_str = meta.get('timestamp', '')
+            try:
+                timestamp = datetime.fromisoformat(ts_str) if ts_str else datetime.min
+            except (ValueError, TypeError):
+                timestamp = datetime.min
+            return timestamp, x.get('score', 0), meta.get('hierarchy_level', 0), meta.get('content_length', 0)
+        sorted_results = sorted(all_results, key=sort_key_text, reverse=True)
         
         combined_results = []
         seen_contents = set()
@@ -474,9 +516,3 @@ def get_mem0(config):
             raise ValueError(f"Unsupported language: {config.language}")
     else:
         raise ValueError(f"writing_mode={config.writing_mode} not supported")
-
-
-
-
-
-

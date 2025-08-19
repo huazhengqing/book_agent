@@ -13,17 +13,21 @@ import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
 
 
-# - 英文关键词提取器，基于 KeyBERT 和 NLTK 库
-# - 支持从文本和 Markdown 中提取关键词
-# - 实现文本分块处理、预处理和缓存功能
-# - 使用 all-MiniLM-L6-v2 模型进行英文语义理解
+"""
+# KeywordExtractorEn
+- 英文关键词提取器，基于 KeyBERT 和 NLTK 库
+- 支持从文本和 Markdown 中提取关键词
+- 实现文本分块处理、预处理和缓存功能
+- 使用 all-MiniLM-L6-v2 模型进行英文语义理解
 
-# 英文：
-# all-MiniLM-L6-v2（轻量高效，适合大多数场景）
-# all-mpnet-base-v2（精度更高，但速度稍慢）
-# 多语言：
-# paraphrase-multilingual-MiniLM-L12-v2（轻量，支持 100 + 语言）
-# xlm-r-bert-base-nli-stsb-mean-tokens（支持语言更多，精度较高）
+# model
+英文：
+all-MiniLM-L6-v2（轻量高效，适合大多数场景）
+all-mpnet-base-v2（精度更高，但速度稍慢）
+多语言：
+paraphrase-multilingual-MiniLM-L12-v2（轻量，支持 100 + 语言）
+xlm-r-bert-base-nli-stsb-mean-tokens（支持语言更多，精度较高）
+"""
 
 
 class KeywordExtractorEn:
@@ -41,7 +45,7 @@ class KeywordExtractorEn:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         cache_dir = os.path.join(current_dir, ".cache", "keyword_extractor_en")
         os.makedirs(cache_dir, exist_ok=True)
-        self.cache = dc.Cache(cache_dir, size_limit=2 * 1024 * 1024 * 1024)
+        self.cache = dc.Cache(cache_dir, size_limit=1024 * 1024 * 300)
 
     def _ensure_model_initialized(self):
         if not self.model:

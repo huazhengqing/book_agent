@@ -45,7 +45,8 @@ echo
 
 
 # pip install --upgrade huggingface_hub
-
+# pip install gemini-cli
+# pip install google-generativeai
 
 
 echo "Installing all project dependencies..."

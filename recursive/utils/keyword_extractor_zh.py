@@ -15,17 +15,21 @@ import hashlib
 import multiprocessing
 
 
-# - 中文关键词提取器，基于 KeyBERT 和 jieba 库
-# - 支持从文本和 Markdown 中提取关键词
-# - 实现文本分块处理、预处理和缓存功能
-# - 使用 BAAI/bge-small-zh 模型进行中文语义理解
+"""
+# KeywordExtractorZh
+- 中文关键词提取器，基于 KeyBERT 和 jieba 库
+- 支持从文本和 Markdown 中提取关键词
+- 实现文本分块处理、预处理和缓存功能
+- 使用 BAAI/bge-small-zh 模型进行中文语义理解
 
-# 中文：
-# shibing624/text2vec-base-chinese（专为中文优化的通用模型）
-# BAAI/bge-small-zh（中文语义理解能力强，适合长文本）
-# 多语言：
-# paraphrase-multilingual-MiniLM-L12-v2（轻量，支持 100 + 语言）
-# xlm-r-bert-base-nli-stsb-mean-tokens（支持语言更多，精度较高）
+# model
+中文：
+shibing624/text2vec-base-chinese（专为中文优化的通用模型）
+BAAI/bge-small-zh（中文语义理解能力强，适合长文本）
+多语言：
+paraphrase-multilingual-MiniLM-L12-v2（轻量，支持 100 + 语言）
+xlm-r-bert-base-nli-stsb-mean-tokens（支持语言更多，精度较高）
+"""
 
 
 class KeywordExtractorZh:
@@ -43,7 +47,7 @@ class KeywordExtractorZh:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         cache_dir = os.path.join(current_dir, ".cache", "keyword_extractor_zh")
         os.makedirs(cache_dir, exist_ok=True)
-        self.cache = dc.Cache(cache_dir, size_limit=2 * 1024 * 1024 * 1024)
+        self.cache = dc.Cache(cache_dir, size_limit=1024 * 1024 * 300)
 
     def __del__(self):
         try:
