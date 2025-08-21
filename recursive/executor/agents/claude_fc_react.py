@@ -37,7 +37,6 @@ class SearchAgent(BaseAgent):
                  prompt_version,
                  action_executor: ActionExecutor,
                  protocol = None,
-                 model = "gpt-4o",
                  max_turn: int = 10,
                  action_memory = True,
                  remove_history = True,
@@ -45,7 +44,6 @@ class SearchAgent(BaseAgent):
                  parse_arg_dict = {}) -> None:
         self.message_constructor = prompt_register.module_dict[prompt_version]()
         self.max_turn = max_turn
-        self.model = model
         self.force_step = '你需要基于历史消息返回一个最终结果'
         self.action_memory = action_memory
         self.remove_history = remove_history
@@ -221,13 +219,10 @@ class SearchAgent(BaseAgent):
             for key in list(prompt.keys()):
                 if key != "message":
                     kwargs[key] = prompt.pop(key)
-
-            kwargs["model"] = self.model   
             
             cnt = 0
             while cnt < 100:
-                response = llm_client.call(messages = prompt["message"],
-                                          overwrite_cache = True if cnt > 0 else False, **kwargs)[0]["message"]["content"]
+                response = llm_client.call_reasoning(messages = prompt["message"], **kwargs)[0]["message"]["content"]
                 try:
                     parsed_resp = self.parse(response)
                 except Exception as e:
@@ -348,10 +343,6 @@ if __name__ == "__main__":
                           pk_quota = 20,
                           select_quota = 8,
                           language = "en")]),
-        # model = "gpt-4o",
-        # model = "deepseek-r1",
-        model = "claude-3-5-sonnet-20241022",
-
         max_turn = 5,
         action_memory = True,
         remove_history = True,
@@ -428,9 +419,5 @@ if __name__ == "__main__":
         system_message = system_message,
         prompt = prompt,
         parse_arg_dict = {"result": "result"},
-        # model = 'gpt-4o-mini'
-        # model = 'deepseek-r1',)
-        # no_cache = True
-        model = 'claude-3-5-sonnet-20241022'
     )
     print(x["original"])

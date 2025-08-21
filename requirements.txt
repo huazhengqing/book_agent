@@ -25,7 +25,7 @@ keybert
 sentence-transformers
 nltk
 huggingface_hub
-
+markdown
 
 
 

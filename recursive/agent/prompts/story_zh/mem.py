@@ -11,7 +11,7 @@ from datetime import datetime
 - 集成 Qdrant 向量数据库和 Memgraph 图数据库
 - mem0的文档 docs/llms-mem0.txt
 - 分类存储：按 正文内容 和 设计方案 分别存储
-- 自定义提示词：针对小说创作定制了事实提取和更新提示词，在 agent/prompts/story_zh 中的 mem.py 中的 mem_story_fact  mem_story_update
+- 自定义提示词：针对小说创作定制了事实提取和更新提示词，在 agent/prompts/story_zh 中的 mem.py 中的 mem_story_fact_zh  mem_story_update_zh
 - 支持 story 、 book 、 report 三种写作模式和多语言支持
 - 根据语言选择对应的关键词提取器
 - 实现动态查询生成，用于检索设计库和正文库
@@ -34,7 +34,7 @@ from datetime import datetime
     - 检索结果在 agent/agents/regular.py 中的 get_llm_output 中的 prompt_args 中组装为上下文，传入 agent/prompts/story_zh 中的 planning.py、reasoner.py、writer.py
 
 
-# mem_story_fact
+# mem_story_fact_zh
 - 多格式内容识别
     - 小说正文：文本
     - 设计结果：markdown 格式，包含：表格、Mermaid图表、层次化内容
@@ -43,7 +43,7 @@ from datetime import datetime
 - 自然语言转换 (便于语义搜索)
 
 
-# mem_story_update
+# mem_story_update_zh
 - 智能更新判断 (ADD/UPDATE/DELETE/NONE)
 - 完整性优先原则
 - 逻辑一致性维护
@@ -58,10 +58,10 @@ from datetime import datetime
 # 问题
 
 
-请为`mem_story_fact`提示词撰写一份全面的分析报告，检查是否存在逻辑不一致之处，指出可以改进的地方
+请为`mem_story_fact_zh`提示词撰写一份全面的分析报告，检查是否存在逻辑不一致之处，指出可以改进的地方
 
 
-请整体评估 `mem_story_fact` 的提示词，并指出其最大的优势和可以进一步强化的方向。
+请整体评估 `mem_story_fact_zh` 的提示词，并指出其最大的优势和可以进一步强化的方向。
 
 
 分析mem_story_fact ，提出改进建议
@@ -73,7 +73,7 @@ from datetime import datetime
 根据以上分析，改进建议， 请直接修改 `mem.py` 文件，并提供diff。
 
 
-分析 mem_story_fact 和 mem_story_update ，如何确保两者更好地协同？
+分析 mem_story_fact_zh 和 mem_story_update_zh ，如何确保两者更好地协同？
 
 
 分析 mem.py 中的         部分，并提出改进建议。
@@ -92,7 +92,7 @@ from datetime import datetime
 
 
 
-mem_story_fact = f"""
+mem_story_fact_zh = f"""
 # 角色和任务
 你是专业的小说创作记忆管理器，你的核心任务是将多样化的创作内容（小说正文、设计文档、任务规划）转化为结构化、一致且可检索的“事实”单元。
 
@@ -158,13 +158,13 @@ mem_story_fact = f"""
 """.strip()
 
 
-mem_story_update = f"""
+mem_story_update_zh = """
 # 角色和任务
 你是专业的小说创作记忆控制器，是整个记忆系统的“守门员”。你的任务是智能地整合新信息，维护记忆库的准确性、一致性和无冗余。
 
 
 # 核心协同原则
-你与 `mem_story_fact` 代理协同工作。它负责将原始输入（正文、设计、规划）转换为标准化的“事实”。
+你与 事实提取代理 协同工作。它负责将原始输入（正文、设计、规划）转换为标准化的“事实”。
 你接收这些事实，并与现有记忆进行比较，决定如何操作。
 所有“事实”和“记忆”都严格遵循统一格式：`[层级信息] [摘要] [原文分段] [标签]`
 
@@ -177,7 +177,7 @@ mem_story_update = f"""
 - NONE: 新事实与现有记忆重复，或信息价值较低，无需任何操作。
 
 
-# 操作准则与示例 (基于新格式)
+# 操作准则与示例
 
 ## 添加 (ADD)
 - 条件: 当新事实的 `[层级信息]` 或核心实体标签在现有记忆中是全新的。
@@ -278,20 +278,16 @@ mem_story_update = f"""
 
 
 # 请记住：
-- 今天的日期是{datetime.now().strftime("%Y-%m-%d")}
 - 格式是第一原则: 严格遵循 `[层级信息] [摘要] [原文分段] [标签]` 格式进行输入理解和输出生成。
 - 精确判断: 严格按照四种操作类型进行判断，并给出正确的 `event`。
 - 保留高价值信息: 始终优先保留信息更丰富、结构更完整、细节更具体的版本。
 - 维护逻辑: 你的所有操作都服务于最终目标：确保故事记忆的逻辑一致性和连贯性。
-
-
-以下是需要处理的记忆更新任务：
 """.strip()
 
 
 
 
-mem_story_design_queries = """
+mem_story_design_queries_zh = """
 # 角色：小说世界架构师与资深情节规划师
 
 你的核心任务是为AI写手生成用于检索“设计库”的搜索查询。设计库是小说的核心蓝图，存储着世界观、力量体系、角色卡、阵营关系、地图设定、情节大纲、伏笔、爽点框架等核心设计文档。你的查询必须精准、深入、且具有前瞻性，以确保AI写手能够获取所有必要的背景信息，写出连贯且精彩的章节。
@@ -396,7 +392,7 @@ mem_story_design_queries = """
 """
 
 
-mem_story_text_queries = """
+mem_story_text_queries_zh = """
 # 角色：小说世界的情节考古学家与记忆侦探
 
 你的核心任务是为AI写手生成用于检索“正文库”的搜索查询。正文库是小说的完整历史记录，包含了从开篇至今的所有章节内容。你的查询必须像一把精准的手术刀，切入记忆的深处，挖掘出与当前任务相关的所有历史情节、角色互动、情感铺垫、关键伏笔和被遗忘的细节，以确保AI写手能写出逻辑严密、情感饱满、前后呼应的精彩内容。

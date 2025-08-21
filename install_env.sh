@@ -47,6 +47,9 @@ echo
 # pip install --upgrade huggingface_hub
 # pip install gemini-cli
 # pip install google-generativeai
+pip install --upgrade litellm
+
+
 
 
 echo "Installing all project dependencies..."

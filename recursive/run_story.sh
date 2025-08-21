@@ -1,10 +1,6 @@
 #!/bin/bash
 
 
-MODEL=openai/deepseek-ai/DeepSeek-R1-0528
-# MODEL=openrouter/deepseek/deepseek-r1-0528:free
-
-
 task_input_file=../test/story.jsonl
 output_folder=../test/story/
 mkdir -p ${output_folder}
@@ -19,6 +15,7 @@ rm -rf ../test/story/爽文小说2/*
 
 rm -rf ../.litellm_cache
 rm -rf ../.mem0
+rm -rf ../.cache
 rm -rf ../test/log
 rm -rf ../test/report
 
@@ -32,5 +29,5 @@ docker ps -a | grep qdrant
 
 
 source ../venv/bin/activate
-python3 engine.py --filename $task_input_file --output-filename $task_output_file --done-flag-file $done_file --model ${MODEL} --mode story --language zh >> run_story.log 2>&1
+python3 engine.py --filename $task_input_file --output-filename $task_output_file --done-flag-file $done_file --mode story --language zh >> run_story.log 2>&1
 

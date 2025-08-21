@@ -199,7 +199,6 @@ def story_writing(input_filename,
                   start,
                   end,
                   done_flag_file,
-                  global_use_model,
                   nodes_json_file=None,
                   language="zh"):
     
@@ -229,7 +228,6 @@ def story_writing(input_filename,
             "execute": {
                 "prompt_version": "StoryWriterEn" if language == "en" else "StoryWriterZh",
                 "llm_args": {
-                    "model": global_use_model,
                     "temperature": 0.3
                 },
                 "parse_arg_dict": {
@@ -241,7 +239,6 @@ def story_writing(input_filename,
                 "without_update_prompt_version": "StoryAtomEn" if language == "en" else "StoryAtomZh",
                 "with_update_prompt_version": "StoryAtomUpdateEn" if language == "en" else "StoryAtomUpdateZh",
                 "llm_args": {
-                    "model": global_use_model,
                     "temperature": 0.1
                 },
                 "parse_arg_dict": {
@@ -254,7 +251,6 @@ def story_writing(input_filename,
             "planning": {
                 "prompt_version": "StoryPlanningEn" if language == "en" else "StoryPlanningZh",
                 "llm_args": {
-                    "model": global_use_model,
                     "temperature": 0.1
                 },
                 "parse_arg_dict": {
@@ -272,7 +268,6 @@ def story_writing(input_filename,
             "execute": { 
                 "prompt_version": "StoryReasonerEn" if language == "en" else "StoryReasonerZh",
                 "llm_args": {
-                    "model": global_use_model,
                     "temperature": 0.3
                 },
                 "parse_arg_dict": {
@@ -285,7 +280,6 @@ def story_writing(input_filename,
                 "without_update_prompt_version": "StoryAtomEn" if language == "en" else "StoryAtomZh",
                 "with_update_prompt_version": "StoryAtomUpdateEn" if language == "en" else "StoryAtomUpdateZh",
                 "llm_args": {
-                    "model": global_use_model,
                     "temperature": 0.1
                 },
                 "parse_arg_dict": {
@@ -298,7 +292,6 @@ def story_writing(input_filename,
             "planning": {
                 "prompt_version": "StoryPlanningEn" if language == "en" else "StoryPlanningZh",
                 "llm_args": {
-                    "model": global_use_model,
                     "temperature": 0.1
                 },
                 "parse_arg_dict": {
@@ -394,7 +387,6 @@ def book_writing(input_filename,
                  start,
                  end,
                  done_flag_file,
-                 global_use_model,
                  engine_backend,
                  nodes_json_file=None,
                  today_date=None,
@@ -428,7 +420,6 @@ def book_writing(input_filename,
             "execute": {
                 "prompt_version": "BookWriterEn" if language == "en" else "BookWriterZh",
                 "llm_args": {
-                    "model": global_use_model,
                     "temperature": 0.3
                 },
                 "parse_arg_dict": {
@@ -440,7 +431,6 @@ def book_writing(input_filename,
                 "without_update_prompt_version": "BookAtomEn" if language == "en" else "BookAtomZh",
                 "with_update_prompt_version": "BookAtomUpdateEn" if language == "en" else "BookAtomUpdateZh",
                 "llm_args": {
-                    "model": global_use_model,
                     "temperature": 0.1
                 },
                 "parse_arg_dict": { # parse args from llm result in xml format
@@ -454,7 +444,6 @@ def book_writing(input_filename,
             "planning": {
                 "prompt_version": "BookPlanningEn" if language == "en" else "BookPlanningZh",
                 "llm_args": {
-                    "model": global_use_model,
                     "temperature": 0.1
                 },
                 "parse_arg_dict": {
@@ -471,7 +460,6 @@ def book_writing(input_filename,
                 "prompt_version": "SearchEn" if language == "en" else "SearchZh",
                 "searcher_type": "SearXNG" if str(engine_backend).lower() == 'searxng' else "SerpApiSearch", # see recursive.executor.actions.bing_browser
                 "llm_args": {
-                    "model": global_use_model, # set the llm
                 },
                 "parse_arg_dict": {
                     "result": ["result"],
@@ -504,7 +492,6 @@ def book_writing(input_filename,
             "search_merge": {
                 "prompt_version": "BookSearchMergeResultEn" if language == "en" else "BookSearchMergeResultZh",
                 "llm_args": {
-                    "model": global_use_model,
                 },
                 "parse_arg_dict": {
                     "result": ["result"],
@@ -513,7 +500,6 @@ def book_writing(input_filename,
             "atom": {
                 "prompt_version": "BookSearchUpdateEn" if language == "en" else "BookSearchUpdateZh",
                 "llm_args": {
-                    "model": global_use_model,
                 },
                 "parse_arg_dict": {
                     "atom_think": ["think"],
@@ -530,7 +516,6 @@ def book_writing(input_filename,
             "execute": {
                 "prompt_version": "BookReasonerEn" if language == "en" else "BookReasonerZh",
                 "llm_args": {
-                    "model": global_use_model,
                     "temperature": 0.3
                 },
                 "parse_arg_dict": {
@@ -628,7 +613,6 @@ def report_writing(input_filename,
                    start,
                    end,
                    done_flag_file,
-                   global_use_model,
                    engine_backend,
                    nodes_json_file=None,
                    today_date=None,
@@ -667,7 +651,6 @@ def report_writing(input_filename,
             "execute": {
                 "prompt_version": "ReportWriterEn" if language == "en" else "ReportWriterZh",
                 "llm_args": {
-                    "model": global_use_model,
                     "temperature": 0.3
                 },
                 "parse_arg_dict": {
@@ -679,7 +662,6 @@ def report_writing(input_filename,
                 "without_update_prompt_version": "ReportAtomEn" if language == "en" else "ReportAtomZh",
                 "with_update_prompt_version": "ReportAtomUpdateEn" if language == "en" else "ReportAtomUpdateZh",
                 "llm_args": {
-                    "model": global_use_model,
                     "temperature": 0.1
                 },
                 "parse_arg_dict": { # parse args from llm result in xml format
@@ -693,7 +675,6 @@ def report_writing(input_filename,
             "planning": {
                 "prompt_version": "ReportPlanningEn" if language == "en" else "ReportPlanningZh",
                 "llm_args": {
-                    "model": global_use_model,
                     "temperature": 0.1
                 },
                 "parse_arg_dict": {
@@ -710,7 +691,6 @@ def report_writing(input_filename,
                 "prompt_version": "SearchEn" if language == "en" else "SearchZh",
                 "searcher_type": "SearXNG" if str(engine_backend).lower() == 'searxng' else "SerpApiSearch", # see recursive.executor.actions.bing_browser
                 "llm_args": {
-                    "model": global_use_model, # set the llm
                 },
                 "parse_arg_dict": {
                     "result": ["result"],
@@ -743,7 +723,6 @@ def report_writing(input_filename,
             "search_merge": {
                 "prompt_version": "ReportSearchMergeResultEn" if language == "en" else "ReportSearchMergeResultZh",
                 "llm_args": {
-                    "model": global_use_model,
                 },
                 "parse_arg_dict": {
                     "result": ["result"],
@@ -752,7 +731,6 @@ def report_writing(input_filename,
             "atom": {
                 "prompt_version": "ReportSearchUpdateEn" if language == "en" else "ReportSearchUpdateZh",
                 "llm_args": {
-                    "model": global_use_model,
                 },
                 "parse_arg_dict": {
                     "atom_think": ["think"],
@@ -769,7 +747,6 @@ def report_writing(input_filename,
             "execute": {
                 "prompt_version": "ReportReasonerEn" if language == "en" else "ReportReasonerZh",
                 "llm_args": {
-                    "model": global_use_model,
                     "temperature": 0.3
                 },
                 "parse_arg_dict": {
@@ -869,7 +846,6 @@ def define_args():
     parser.add_argument("--filename", type=str, required=True)
     parser.add_argument("--mode", type=str, choices=["story", "report", "book"], required=True)
     parser.add_argument("--output-filename", type=str, required=True)
-    parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--length", type=int)
     parser.add_argument("--engine-backend", type=str)
     parser.add_argument("--nodes-json-file", type=str, help="Path to save nodes.json for real-time visualization")
@@ -889,13 +865,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.mode == "story":
         story_writing(args.filename, args.output_filename,
-                      args.start, args.end, args.done_flag_file, args.model,
+                      args.start, args.end, args.done_flag_file, 
                       nodes_json_file=args.nodes_json_file, language=args.language)
     elif args.mode == "report":
         report_writing(args.filename, args.output_filename,
-                       args.start, args.end, args.done_flag_file, args.model, args.engine_backend,
+                       args.start, args.end, args.done_flag_file, args.engine_backend,
                        nodes_json_file=args.nodes_json_file, today_date=args.today_date, language=args.language)
     else:
         book_writing(args.filename, args.output_filename,
-                     args.start, args.end, args.done_flag_file, args.model, args.engine_backend,
+                     args.start, args.end, args.done_flag_file, args.engine_backend,
                      nodes_json_file=args.nodes_json_file, today_date=args.today_date, language=args.language)

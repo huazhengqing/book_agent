@@ -41,18 +41,8 @@ class Agent(ABC):
         if history_message is not None:
             message.append(history_message)
         message.append({"role": "user", "content": prompt})
-        # logger.info(message[-1]["content"])
         logger.info(f"call_llm() system_message=\n{system_message}\n\nprompt=\n{prompt}")
-        
-        model = other_inner_args.pop("model", "gpt-4o")
-        
-        resp = llm_client.call(messages = message,
-                        model=model,
-                        **other_inner_args)[0]
-        # if "r1" in model:
-        #     reason = resp["message"]["reasoning_content"]
-        # else:
-        #     reason = ""
+        resp = llm_client.call_reasoning(messages = message, **other_inner_args)[0]
         reason = resp["message"].get("reasoning_content") or resp["message"].get("reasoning", "")
         content = resp["message"]["content"]
         logger.info(f"call_llm() reason=\n{reason}\n\ncontent=\n{content}")

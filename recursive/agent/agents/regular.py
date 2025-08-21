@@ -366,7 +366,6 @@ class SimpleExcutor(Agent):
                                            webpage_helper_max_threads=inner_kwargs["webpage_helper_max_threads"],
                                            backend_engine=inner_kwargs["backend_engine"],
                                            cc=inner_kwargs["cc"])]),
-                model = inner_kwargs["llm_args"]["model"],
                 max_turn = inner_kwargs["max_turn"],
                 action_memory = True,
                 remove_history = True,

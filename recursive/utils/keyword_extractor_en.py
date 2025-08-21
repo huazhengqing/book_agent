@@ -11,6 +11,8 @@ import os
 import hashlib
 import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
+import multiprocessing
+import threading
 
 
 """
@@ -42,8 +44,8 @@ class KeywordExtractorEn:
 
         self.base_stop_words = set(stopwordsiso.stopwords("en"))
 
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        cache_dir = os.path.join(current_dir, ".cache", "keyword_extractor_en")
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        cache_dir = os.path.join(project_root, ".cache", "keyword_extractor_zh")
         os.makedirs(cache_dir, exist_ok=True)
         self.cache = dc.Cache(cache_dir, size_limit=1024 * 1024 * 300)
 

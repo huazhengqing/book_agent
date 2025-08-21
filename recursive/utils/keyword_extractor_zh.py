@@ -13,6 +13,7 @@ import jieba
 import hashlib
 # import jieba.posseg as pseg
 import multiprocessing
+import threading
 
 
 """
@@ -44,8 +45,8 @@ class KeywordExtractorZh:
 
         self.base_stop_words = set(stopwordsiso.stopwords("zh"))
 
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        cache_dir = os.path.join(current_dir, ".cache", "keyword_extractor_zh")
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        cache_dir = os.path.join(project_root, ".cache", "keyword_extractor_zh")
         os.makedirs(cache_dir, exist_ok=True)
         self.cache = dc.Cache(cache_dir, size_limit=1024 * 1024 * 300)
 
