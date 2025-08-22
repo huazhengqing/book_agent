@@ -160,36 +160,31 @@ class StoryWriterZh(PromptTemplate):
 {to_run_task}
 
 
-# 故事最新的已完成内容，你的起笔之处
+# 上下文
+
+## 最新情节，你的起笔之处
 - 从下面这段内容的结尾处开始，无缝衔接，保持风格一致。
 {to_run_article_latest}
 
+## 相关历史记忆
+- 这是从记忆库中检索出的、与你当前任务最相关的历史情节片段。
+{to_run_mem0_content}
 
-# 你的施工蓝图
-- 这是你本次写作必须严格遵循的核心设计方案。
-<design_blueprint>
+## 整体规划
+- 当前任务在整体规划中的位置。
+{to_run_full_plan}
+
+## 同级设计
+- 与当前任务平级的相关设计，最终方案需与之协同。
+<same_graph_dependent>
 {to_run_same_graph_dependent}
-</design_blueprint>
+</same_graph_dependent>
 
-
-# 世界蓝图与历史回响
-- 以下是帮助你保持故事一致性的宏观背景和历史记忆。请在写作时参考，确保不与核心设定冲突。
-
-## 相关的上级设计约束 (检索结果)
-- 注意：这不是全部的上级设计，而是与当前任务最相关的检索结果。
+## 上级设计
+- 必须严格遵守的上级设计。
 <outer_graph_dependent>
 {to_run_outer_graph_dependent}
 </outer_graph_dependent>
-
-## 相关历史情节（检索出的记忆片段，非全文）
-- 注意：这不是全部历史，而是与当前任务最相关的记忆检索结果。
-{to_run_mem0_content}
-
-## 最终目标
-{to_run_root_question}
-
-## 整体故事架构
-{to_run_full_plan}
 """.strip()
         
         super().__init__(system_message, content_template)
