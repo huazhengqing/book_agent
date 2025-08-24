@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Optional
 from loguru import logger
 import litellm
 from litellm.caching.caching import Cache
+from litellm.exceptions import Timeout, AuthenticationError, APIError, RateLimitError
 
 
 class LiteLLMProxy:
@@ -24,7 +25,7 @@ class LiteLLMProxy:
             'caching': True,
             'max_tokens': 131072,
             'max_completion_tokens': 131072,
-            'timeout': 300,
+            'timeout': 900,
             'num_retries': 2,
             'respect_retry_after': True
         }
@@ -48,12 +49,14 @@ class LiteLLMProxy:
             'caching': True,
             'max_tokens': 131072,
             'max_completion_tokens': 131072,
-            'timeout': 300,
+            'timeout': 900,
             'num_retries': 2,
             'respect_retry_after': True,
             'fallbacks': [
                 # 'openai/deepseek-ai/DeepSeek-R1-0528',
                 'openrouter/deepseek/deepseek-r1-0528:free',
+                'openai/deepseek-ai/DeepSeek-V3',
+                'openrouter/deepseek/deepseek-chat-v3-0324:free',
                 ]
         }
         if temperature is not None:

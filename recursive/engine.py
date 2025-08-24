@@ -193,7 +193,10 @@ def read_jsonl(filename: str, jsonl_format=True) -> List[Dict]:
 
     return data
 
-    
+
+###############################################################################
+
+
 def story_writing(input_filename,
                   output_filename,
                   start,
@@ -380,6 +383,9 @@ def story_writing(input_filename,
     if done_flag_file is not None:
         with open(done_flag_file, "w") as f:
             f.write("done")
+
+
+###############################################################################
 
 
 def book_writing(input_filename,
@@ -606,6 +612,9 @@ def book_writing(input_filename,
     if done_flag_file is not None:
         with open(done_flag_file, "w") as f:
             f.write("done")
+
+
+###############################################################################
 
 
 def report_writing(input_filename,
@@ -838,9 +847,11 @@ def report_writing(input_filename,
     if done_flag_file is not None:
         with open(done_flag_file, "w") as f:
             f.write("done")
-            
-                  
-                                 
+
+
+###############################################################################
+
+
 def define_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--filename", type=str, required=True)
@@ -857,8 +868,6 @@ def define_args():
     parser.add_argument("--need-continue", action="store_true")
     parser.add_argument("--language", type=str, choices=["en", "zh"], default="zh", help="Language for result (en: English, zh: Chinese)")
     return parser
-    
-
 
 if __name__ == "__main__":
     parser = define_args()

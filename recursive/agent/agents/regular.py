@@ -184,6 +184,8 @@ def extract_json_content(text):
     return None
 
 
+###############################################################################
+
 
 @agent_register.register_module()
 class UpdateAtomPlanningAgent(Agent):
@@ -315,7 +317,59 @@ class UpdateAtomPlanningAgent(Agent):
 
     @overrides
     def parse_result(self, agent_output, *args, **kwargs) -> Dict:
-        return json.loads(agent_output.strip().strip('`').replace('json', '').strip())["sub_tasks"]
+        # 清理JSON字符串，移除注释
+        cleaned_json = self._clean_json_comments(agent_output.strip().strip('`').replace('json', '').strip())
+        return json.loads(cleaned_json)["sub_tasks"]
+    
+    def _clean_json_comments(self, json_str):
+        """
+        清理JSON字符串中的注释
+        移除 // 单行注释和 /* */ 多行注释
+        """
+        
+        # 移除单行注释 // comment
+        # 注意保持在字符串内的注释不被删除
+        lines = json_str.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            # 查找第一个不在字符串内的 //
+            in_string = False
+            escape_next = False
+            comment_start = -1
+            
+            for i, char in enumerate(line):
+                if escape_next:
+                    escape_next = False
+                    continue
+                    
+                if char == '\\' and in_string:
+                    escape_next = True
+                    continue
+                    
+                if char == '"' and not escape_next:
+                    in_string = not in_string
+                    continue
+                    
+                if not in_string and char == '/' and i + 1 < len(line) and line[i + 1] == '/':
+                    comment_start = i
+                    break
+            
+            if comment_start >= 0:
+                line = line[:comment_start].rstrip()
+            
+            cleaned_lines.append(line)
+        
+        # 重新连接行
+        cleaned_json = '\n'.join(cleaned_lines)
+        
+        # 移除多行注释 /* comment */
+        cleaned_json = re.sub(r'/\*.*?\*/', '', cleaned_json, flags=re.DOTALL)
+        
+        return cleaned_json
+
+
+###############################################################################
 
 
 FORMAT_STRING_TEMPLATE = """
@@ -334,7 +388,6 @@ FORMAT_STRING_TEMPLATE = """
 </summary>
 </web_page>
 """
-
 
 
 @agent_register.register_module()
@@ -511,7 +564,10 @@ class SimpleExcutor(Agent):
             llm_result = {"result": search_results}
             
         return llm_result
-        
+
+
+###############################################################################
+
 
 @agent_register.register_module()
 class FinalAggregateAgent(Agent):

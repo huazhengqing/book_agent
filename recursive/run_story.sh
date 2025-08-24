@@ -10,14 +10,16 @@ done_file=${output_folder}/done.txt
 
 
 rm -rf ./.mem0
+rm -rf ./.cache
 rm -rf ./run_story.log
-rm -rf ../test/story/爽文小说2/*
+
 
 rm -rf ../.litellm_cache
 rm -rf ../.mem0
 rm -rf ../.cache
 rm -rf ../test/log
 rm -rf ../test/report
+rm -rf ../test/story/爽文小说2/*
 
 
 # docker-compose stop

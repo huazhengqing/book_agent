@@ -84,6 +84,9 @@ class Graph:
         return json_ret
         
         
+###############################################################################
+
+
 class TaskStatus(Enum):
     # Dependent nodes have not yet completed execution
     NOT_READY = 1 
@@ -125,6 +128,9 @@ def process_all_node_to_node_str(obj):
         # raise NotImplementedError("No such class for node convert: {}".format(type(obj).__name__))
     return str_obj
         
+
+###############################################################################
+
 
 class AbstractNode(ABC):
     def __init__(self, config, nid, node_graph_info, 
@@ -522,6 +528,9 @@ class AbstractNode(ABC):
                 ))
         return result
     
+
+###############################################################################
+
 
 @task_register.register_module()
 class RegularDummyNode(AbstractNode):   
