@@ -32,6 +32,9 @@ xlm-r-bert-base-nli-stsb-mean-tokens（支持语言更多，精度较高）
 """
 
 
+###############################################################################
+
+
 class KeywordExtractorEn:
     def __init__(self):
         self.model = None
@@ -180,7 +183,7 @@ class KeywordExtractorEn:
         return ' '.join(filtered)
 
 
-
+###############################################################################
 
 
 keyword_extractor_en = KeywordExtractorEn()

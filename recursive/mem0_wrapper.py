@@ -10,8 +10,10 @@ from recursive.utils.keyword_extractor_en import keyword_extractor_en
 from recursive.agent.prompts.story_zh.mem import (
     mem_story_fact_zh,
     mem_story_update_zh,
-    mem_story_design_queries_zh,
-    mem_story_text_queries_zh
+    mem_story_design_queries_zh_system,
+    mem_story_design_queries_zh_user,
+    mem_story_text_queries_zh_system,
+    mem_story_text_queries_zh_user
 )
 import diskcache
 import hashlib
@@ -48,23 +50,17 @@ from datetime import datetime
 - 4. 结果应用
     - 检索结果作为上下文提供给 LLM 用于生成新的内容或设计
     - 检索结果在 agent/agents/regular.py 中的 get_llm_output 中的 prompt_args 中组装为上下文，传入 agent/prompts/story_zh 中的 planning.py、reasoner.py、writer.py
-
-# 问题
-
-分析 mem0_wrapper.py，撰写一份全面的分析报告，检查是否存在逻辑不一致之处，指出可以改进的地方，如何确保它们更好地协同？
+"""
 
 
-
-图数据库潜力未完全发挥：当前 mem0_wrapper 的代码主要体现了向量检索的能力。虽然配置了 Memgraph，但图数据库在分析任务依赖、角色关系、情节脉络等结构化信息上的强大能力尚未在封装层显式调用。例如 get_full_plan 通过多次搜索来重建规划链，这或许可以通过一次高效的图查询来完成。
-
-
-使用轻量级的llm，来生成检索词
-请给我推荐一些适合便宜又好用的llm，目标是节省成本，又不能降低质量
-支持英文小说
+###############################################################################
 
 
 """
+分析 mem0_wrapper.py，撰写一份全面的分析报告，检查是否存在逻辑不一致之处，指出可以改进的地方，如何确保它们更好地协同？
 
+
+"""
 
 class Mem0:
     def __init__(self, writing_mode, language):
@@ -310,27 +306,34 @@ class Mem0:
         """
         使用轻量级LLM根据任务和上下文动态生成用于检索“设计库”、“小说正文”的搜索查询词。
         """
-        prompt = ""
+        prompt_system = ""
+        prompt_user = ""
         if category == "design":
             if self.writing_mode == "story":
                 if self.language == "zh":
-                    prompt = mem_story_design_queries_zh.format(task_goal=task_goal, context_str=context_str)
+                    prompt_system = mem_story_design_queries_zh_system
+                    prompt_user = mem_story_design_queries_zh_user.format(task_goal=task_goal, context_str=context_str)
                 elif self.language == "en":
-                    prompt =""
+                    prompt_system = ""
+                    prompt_user = ""
                 else:
                     raise ValueError(f"Unsupported language: {self.language}")
             elif self.writing_mode == "book":
                 if self.language == "zh":
-                    prompt =""
+                    prompt_system = ""
+                    prompt_user = ""
                 elif self.language == "en":
-                    prompt =""
+                    prompt_system = ""
+                    prompt_user = ""
                 else:
                     raise ValueError(f"Unsupported language: {self.language}")
             elif self.writing_mode == "report":
                 if self.language == "zh":
-                    prompt =""
+                    prompt_system = ""
+                    prompt_user = ""
                 elif self.language == "en":
-                    prompt =""
+                    prompt_system = ""
+                    prompt_user = ""
                 else:
                     raise ValueError(f"Unsupported language: {self.language}")
             else:
@@ -338,23 +341,29 @@ class Mem0:
         elif category == "text":
             if self.writing_mode == "story":
                 if self.language == "zh":
-                    prompt = mem_story_text_queries_zh.format(task_goal=task_goal, context_str=context_str)
+                    prompt_system = mem_story_text_queries_zh_system
+                    prompt_user = mem_story_text_queries_zh_user.format(task_goal=task_goal, context_str=context_str)
                 elif self.language == "en":
-                    prompt =""
+                    prompt_system = ""
+                    prompt_user = ""
                 else:
                     raise ValueError(f"Unsupported language: {self.language}")
             elif self.writing_mode == "book":
                 if self.language == "zh":
-                    prompt =""
+                    prompt_system = ""
+                    prompt_user = ""
                 elif self.language == "en":
-                    prompt =""
+                    prompt_system = ""
+                    prompt_user = ""
                 else:
                     raise ValueError(f"Unsupported language: {self.language}")
             elif self.writing_mode == "report":
                 if self.language == "zh":
-                    prompt =""
+                    prompt_system = ""
+                    prompt_user = ""
                 elif self.language == "en":
-                    prompt =""
+                    prompt_system = ""
+                    prompt_user = ""
                 else:
                     raise ValueError(f"Unsupported language: {self.language}")
             else:
@@ -365,12 +374,12 @@ class Mem0:
         response = None
         if self.language == "zh":
             response = llm_client.call_fast_zh(
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "system", "content": prompt_system}, {"role": "user", "content": prompt_user}],
                 temperature=0.2,
             )
         elif self.language == "en":
             response = llm_client.call_fast_en(
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "system", "content": prompt_system}, {"role": "user", "content": prompt_user}],
                 temperature=0.2,
             )
         else:
@@ -392,14 +401,20 @@ class Mem0:
         """
         检索设计结果
         替换 agent/agents/regular.py 中的 get_llm_output 中的 to_run_outer_graph_dependent
+        当任务 是write任务时，必需要检索 叙事风格: 确定叙事视角、语言风格、文笔基调、核心叙事策略（如展示/讲述比例）
         工作流程：
             1. 动态查询生成 ：通过 _generate_design_queries 方法，使用轻量级 LLM 根据任务目标和上下文生成搜索查询词
             2. 关键词增强 ：
                 - 将任务目标也作为查询词
                 - 从最新内容中提取关键词
                 - 从相关设计中提取关键词
-            3. 内容检索 ：调用 search 方法从向量数据库中检索相关设计内容
-            4. 结果优化 ：
+            3. 叙事风格检索（针对写作任务）：
+                - 检索叙事视角设定
+                - 检索语言风格指南
+                - 检索文笔基调规范
+                - 检索核心叙事策略（如展示/讲述比例）
+            4. 内容检索 ：调用 search 方法从向量数据库中检索相关设计内容
+            5. 结果优化 ：
                 - 按层级（越高越重要）、相关度评分、内容长度和时间戳排序
                 - 去重处理，避免重复内容
         """
@@ -417,6 +432,21 @@ class Mem0:
         )
 
         all_queries.append(task_goal)
+        
+        # 针对写作任务，添加叙事风格相关的必需查询
+        if task_type and 'write' in task_type.lower():
+            narrative_style_queries = [
+                "叙事风格",
+                "叙事视角 人称设定 POV",
+                "语言风格 文笔特色 措辞风格", 
+                "文笔基调 情感基调 氛围设定",
+                "叙事策略 展示比例 讲述比例",
+                "叙事技巧 描写手法 表现手法",
+                "章节风格 段落风格 句式特点",
+                "对话风格 内心独白 心理描写",
+                "节奏控制 张弛有度 情节节奏"
+            ]
+            all_queries.extend(narrative_style_queries)
 
         combined_content = f"{latest_content}\n\n{same_graph_dependent_designs}"
         if combined_content:
@@ -529,6 +559,8 @@ class Mem0:
         logger.info(f"mem0 get_story_content() {self.writing_mode}_{self.language}_{hashkey}\n{task_goal}\n{task_goals}")
         return "\n".join(task_goals)
 
+
+###############################################################################
 
 
 mem0_story_zh = Mem0("story", "zh")

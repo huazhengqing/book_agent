@@ -33,6 +33,9 @@ xlm-r-bert-base-nli-stsb-mean-tokens（支持语言更多，精度较高）
 """
 
 
+###############################################################################
+
+
 class KeywordExtractorZh:
     def __init__(self):
         self.model = None
@@ -178,8 +181,9 @@ class KeywordExtractorZh:
         words = jieba.lcut(chunk, cut_all=False)
         filtered = [w for w in words if w not in self.base_stop_words and len(w) > 1]
         return " ".join(filtered)
-    
 
+
+###############################################################################
 
 
 keyword_extractor_zh = KeywordExtractorZh()
