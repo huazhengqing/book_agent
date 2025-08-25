@@ -24,8 +24,8 @@ rm -rf ../test/story/爽文小说2/*
 
 # docker-compose stop
 # docker-compose down -v
-# docker-compose up -d
-# sleep 10
+docker-compose up -d
+sleep 10
 docker ps -a | grep memgraph
 docker ps -a | grep qdrant
 
