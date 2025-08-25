@@ -250,40 +250,30 @@ class Mem0:
         )
 
     def search(self, hashkey, querys, category, limit=1, filters=None):
-        """
-        优化的批量查询实现，智能处理多关键词检索，提升检索质量和召回率
-        """
         if not querys:
             return []
         
-        # 去重和预处理查询列表
         unique_queries = list(dict.fromkeys([q.strip() for q in querys if q and q.strip()]))
         if not unique_queries:
             return []
         
         user_id = f"{self.writing_mode}_{self.language}_{hashkey}_{category}"
         
-        # 智能查询策略选择 - 大幅提升关键词处理能力
         if len(unique_queries) == 1:
-            # 单个查询，直接执行
             query = unique_queries[0]
-        elif len(unique_queries) <= 8:  # 提升到8个关键词
-            # 中等数量查询，使用OR逻辑组合
+        elif len(unique_queries) <= 8:
             query = " OR ".join([f"({q})" for q in unique_queries])
-        elif len(unique_queries) <= 15:  # 处理更多关键词
-            # 较多查询，分组处理：重要关键词用OR，其他用空格连接
-            primary_queries = unique_queries[:8]  # 前8个作为主要查询
-            secondary_queries = unique_queries[8:15]  # 后面的作为辅助
+        elif len(unique_queries) <= 15:
+            primary_queries = unique_queries[:8]
+            secondary_queries = unique_queries[8:15]
             primary_part = " OR ".join([f"({q})" for q in primary_queries])
             secondary_part = " ".join(secondary_queries)
             query = f"({primary_part}) {secondary_part}"
             logger.info(f"Using hybrid strategy: {len(primary_queries)} OR queries + {len(secondary_queries)} AND queries")
         else:
-            # 大量查询，智能分层处理
-            # 分为三层：核心关键词(OR)、重要关键词(AND)、补充关键词(AND)
-            core_queries = unique_queries[:6]  # 核心查询
-            important_queries = unique_queries[6:12]  # 重要查询
-            supplement_queries = unique_queries[12:20]  # 补充查询，最多20个
+            core_queries = unique_queries[:6]
+            important_queries = unique_queries[6:12]
+            supplement_queries = unique_queries[12:20]
             
             core_part = " OR ".join([f"({q})" for q in core_queries])
             important_part = " ".join(important_queries) if important_queries else ""
@@ -297,15 +287,13 @@ class Mem0:
             
             query = " ".join(query_parts)
             logger.info(f"Using layered strategy: {len(core_queries)} core + {len(important_queries)} important + {len(supplement_queries)} supplement queries")
-            
-            # 记录被截断的查询数量
+
             if len(unique_queries) > 20:
                 logger.info(f"Truncated {len(unique_queries) - 20} queries to maintain performance")
         
         logger.info(f"mem0 search() {user_id}\nOptimized query: {query[:200]}...\nTotal keywords: {len(unique_queries)}\nLimit: {limit}\nFilters: {filters}")
         
         try:
-            # 执行查询
             results = self.get_client().search(
                 query=query,
                 user_id=user_id,
@@ -313,7 +301,6 @@ class Mem0:
                 filters=filters
             )
             
-            # 统一结果格式处理
             if isinstance(results, dict):
                 final_results = results.get('results', [])
             elif isinstance(results, list):
@@ -321,26 +308,26 @@ class Mem0:
             else:
                 final_results = []
             
+            final_results = self._apply_hybrid_ranking(final_results, unique_queries, category)
+            
             logger.info(f"mem0 search() completed: {len(final_results)} results for {len(unique_queries)} queries")
             return final_results
             
         except Exception as e:
             logger.error(f"Optimized search failed: {e}")
-            # 容错降级：分批次检索策略
             logger.info("Falling back to batch retrieval strategy")
             
             try:
                 all_fallback_results = []
-                # 分批处理，每批最多8个关键词
                 batch_size = 8
-                for i in range(0, min(len(unique_queries), 16), batch_size):  # 最多处理16个关键词
+                for i in range(0, min(len(unique_queries), 16), batch_size):
                     batch_queries = unique_queries[i:i + batch_size]
                     batch_query = " OR ".join([f"({q})" for q in batch_queries])
                     
                     batch_results = self.get_client().search(
                         query=batch_query,
                         user_id=user_id,
-                        limit=max(limit // 2, 50),  # 每批次适当降低limit
+                        limit=max(limit // 2, 50), 
                         filters=filters
                     )
                     
@@ -353,7 +340,6 @@ class Mem0:
                     
                     all_fallback_results.extend(batch_final)
                 
-                # 去重并按分数排序
                 seen_memories = set()
                 unique_results = []
                 for result in all_fallback_results:
@@ -362,8 +348,7 @@ class Mem0:
                         unique_results.append(result)
                         seen_memories.add(memory)
                 
-                # 按相关性分数排序并限制结果数量
-                unique_results.sort(key=lambda x: x.get('score', 0), reverse=True)
+                unique_results = self._apply_hybrid_ranking(unique_results, unique_queries, category)
                 final_fallback_results = unique_results[:limit]
                 
                 logger.info(f"Batch fallback search completed: {len(final_fallback_results)} results from {len(unique_queries)} queries")
@@ -371,7 +356,6 @@ class Mem0:
                 
             except Exception as e2:
                 logger.error(f"Batch fallback search also failed: {e2}")
-                # 最后的降级策略：使用前5个最重要的关键词
                 try:
                     simple_query = " ".join(unique_queries[:5])
                     logger.info(f"Final fallback to simple query: {simple_query}")
@@ -393,6 +377,93 @@ class Mem0:
                 except Exception as e3:
                     logger.error(f"All search strategies failed: {e3}")
                     return []
+    
+    def _apply_hybrid_ranking(self, results, query_terms, category):
+        if not results or not query_terms:
+            return results
+        
+        try:
+            enhanced_results = []
+            for result in results:
+                memory = result.get('memory', '').lower()
+                original_score = result.get('score', 0.0)
+                
+                # 计算关键词匹配分数
+                keyword_match_score = 0
+                for term in query_terms:
+                    if term.lower() in memory:
+                        # 精确匹配加分更多
+                        keyword_match_score += 2.0
+                    else:
+                        # 部分匹配检查
+                        term_chars = set(term.lower())
+                        memory_chars = set(memory)
+                        overlap = len(term_chars & memory_chars) / len(term_chars) if term_chars else 0
+                        if overlap > 0.5:  # 50%以上字符重叠
+                            keyword_match_score += overlap
+                
+                # 计算内容质量分数
+                content_quality_score = 0
+                metadata = result.get('metadata', {})
+                content_length = len(memory)
+                
+                # 内容长度评分
+                if 50 <= content_length <= 1000:
+                    content_quality_score += 1.0
+                elif content_length > 1000:
+                    content_quality_score += 0.8
+                else:
+                    content_quality_score += 0.5
+                
+                # 時间新鲜度评分
+                if 'timestamp' in metadata:
+                    try:
+                        timestamp = datetime.fromisoformat(metadata['timestamp'])
+                        time_diff = (datetime.now() - timestamp).total_seconds()
+                        if time_diff <= 3600:  # 1小时内
+                            content_quality_score += 1.5
+                        elif time_diff <= 86400:  # 1天内
+                            content_quality_score += 1.0
+                        elif time_diff <= 604800:  # 1周内
+                            content_quality_score += 0.5
+                    except:
+                        pass
+                
+                # 类别特定评分
+                category_score = 0
+                if category == "design":
+                    # 设计类内容优先考虑层级和结构化程度
+                    if 'hierarchy_level' in metadata:
+                        category_score += metadata.get('hierarchy_level', 0) * 0.1
+                    if any(marker in memory for marker in ['###', '|', '```', '-']):
+                        category_score += 0.5  # 结构化内容加分
+                elif category == "text":
+                    # 文本类内容优先考虑连贯性和完整性
+                    if any(marker in memory for marker in ['。', '！', '？', '\n']):
+                        category_score += 0.3  # 完整句子加分
+                
+                # 综合评分计算
+                final_score = (
+                    original_score * 0.4 +  # 原始语义相似度权重
+                    keyword_match_score * 0.35 +  # 关键词匹配权重
+                    content_quality_score * 0.15 +  # 内容质量权重
+                    category_score * 0.1  # 类别特定权重
+                )
+                
+                enhanced_result = result.copy()
+                enhanced_result['hybrid_score'] = final_score
+                enhanced_result['keyword_match_score'] = keyword_match_score
+                enhanced_result['content_quality_score'] = content_quality_score
+                enhanced_results.append(enhanced_result)
+            
+            enhanced_results.sort(key=lambda x: x.get('hybrid_score', 0), reverse=True)
+            
+            logger.info(f"Applied hybrid ranking to {len(results)} results, top score: {enhanced_results[0].get('hybrid_score', 0):.3f}" if enhanced_results else "No results to rank")
+            return enhanced_results
+            
+        except Exception as e:
+            logger.warning(f"Hybrid ranking failed: {e}, falling back to original order")
+            return results
         
     def get_outer_graph_dependent(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
         s = f"{hashkey}\n{task_info}\n{same_graph_dependent_designs}\n{latest_content}"
@@ -754,6 +825,91 @@ class Mem0:
         if cached_result is not None:
             return cached_result
         
+        # 尝试使用Cypher查询进行高效路径检索
+        cypher_result = self._get_full_plan_via_cypher(hashkey, task_id)
+        if cypher_result:
+            self.cache_full_plan.set(cache_key, cypher_result)
+            logger.info(f"mem0 get_full_plan_cypher() {self.writing_mode}_{self.language}_{hashkey}\n{task_goal}\n{cypher_result}")
+            return cypher_result
+        
+        # 降级到原有的批量查询策略
+        logger.info("Cypher query failed, falling back to batch search strategy")
+        return self._get_full_plan_fallback(hashkey, task_info)
+    
+    def _get_full_plan_via_cypher(self, hashkey, task_id):
+        """
+        使用Cypher查询直接从Memgraph获取任务层级路径
+        提升查询效率，减少网络往返
+        """
+        try:
+            # 构建任务ID层级链
+            to_task_ids = []
+            current_id = task_id
+            to_task_ids.append(current_id)
+            while "." in current_id:
+                current_id = ".".join(current_id.split(".")[:-1])
+                to_task_ids.append(current_id)
+            to_task_ids = sorted(to_task_ids, key=lambda x: len(x.split(".")))
+            
+            # 通过mem0的图数据库连接执行Cypher查询
+            graph_store = self.get_client().graph_store
+            if not hasattr(graph_store, 'graph'):
+                return None
+                
+            # 构建Cypher查询语句 - 查找包含目标任务ID的所有节点
+            task_goals = []
+            user_id = f"{self.writing_mode}_{self.language}_{hashkey}"
+            
+            for pid in to_task_ids:
+                # 使用Cypher查询查找包含特定任务ID的实体
+                cypher_query = """
+                MATCH (e:Entity)
+                WHERE e.user_id = $user_id 
+                  AND (e.name CONTAINS $task_id OR e.text CONTAINS $task_id)
+                RETURN e.name, e.text
+                LIMIT 5
+                """
+                
+                try:
+                    result = graph_store.graph.run(cypher_query, 
+                                                  user_id=user_id, 
+                                                  task_id=pid)
+                    
+                    for record in result:
+                        name = record.get('e.name', '')
+                        text = record.get('e.text', '')
+                        content = text if text else name
+                        
+                        if content and pid in content:
+                            task_goals.append(f"[{pid}]: {content}")
+                            break
+                            
+                except Exception as e:
+                    logger.warning(f"Cypher query failed for task {pid}: {e}")
+                    continue
+            
+            if task_goals:
+                # 按任务ID层级排序
+                def sort_key(item):
+                    task_id_match = item.split("]: ")[0].replace("[", "")
+                    return len(task_id_match.split("."))
+                
+                task_goals.sort(key=sort_key)
+                return "\n".join(task_goals)
+                
+        except Exception as e:
+            logger.warning(f"Cypher-based full plan query failed: {e}")
+            return None
+        
+        return None
+    
+    def _get_full_plan_fallback(self, hashkey, task_info):
+        """
+        原有的批量查询策略作为降级方案
+        """
+        task_id = task_info.get("id", "")
+        task_goal = task_info.get('goal', '')
+        
         # 构建任务ID层级链
         to_task_ids = []
         current_id = task_id
@@ -890,9 +1046,10 @@ class Mem0:
         task_goals.sort(key=sort_key)
         result = "\n".join(task_goals)
         
+        cache_key = f"full_plan_{self.writing_mode}_{self.language}_{hashkey}_{task_info.get('id', '')}"
         self.cache_full_plan.set(cache_key, result)
         
-        logger.info(f"mem0 get_full_plan_optimized() {self.writing_mode}_{self.language}_{hashkey}\n{task_goal}\n{task_goals}")
+        logger.info(f"mem0 get_full_plan_fallback() {self.writing_mode}_{self.language}_{hashkey}\n{task_info.get('goal', '')}\n{task_goals}")
         return result
 
 

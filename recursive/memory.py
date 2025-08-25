@@ -8,6 +8,8 @@ from loguru import logger
 import json
 from datetime import datetime
 import time
+import hashlib
+from functools import lru_cache
 
 
 # article = ""
@@ -30,6 +32,70 @@ class Memory:
         assert self.format in ("xml", "nl")
 
         self.folder = ""
+        
+        # 内存缓存字典
+        self._node_info_cache = {}
+        self._collect_cache = {}
+        self._cache_max_size = 1000  # 缓存最大条目数
+        self._cache_hit_count = 0
+        self._cache_miss_count = 0
+        
+    def _generate_cache_key(self, prefix, *args):
+        """
+        生成缓存键，基于参数内容的哈希值
+        """
+        content = str(args)
+        cache_hash = hashlib.blake2b(content.encode('utf-8'), digest_size=16).hexdigest()
+        return f"{prefix}_{cache_hash}"
+    
+    def _get_from_cache(self, cache_key):
+        """
+        从缓存获取数据
+        """
+        if cache_key in self._node_info_cache:
+            self._cache_hit_count += 1
+            return self._node_info_cache[cache_key]
+        self._cache_miss_count += 1
+        return None
+    
+    def _set_to_cache(self, cache_key, value):
+        """
+        设置缓存数据，实现LRU策略
+        """
+        if len(self._node_info_cache) >= self._cache_max_size:
+            # 简单的LRU实现：删除最早的25%条目
+            keys_to_remove = list(self._node_info_cache.keys())[:self._cache_max_size // 4]
+            for key in keys_to_remove:
+                del self._node_info_cache[key]
+        
+        self._node_info_cache[cache_key] = deepcopy(value)
+    
+    def _clear_cache(self):
+        """
+        清空缓存
+        """
+        self._node_info_cache.clear()
+        self._collect_cache.clear()
+    
+    def get_cache_stats(self):
+        """
+        获取缓存统计信息
+        """
+        total_requests = self._cache_hit_count + self._cache_miss_count
+        hit_rate = (self._cache_hit_count / total_requests * 100) if total_requests > 0 else 0
+        return {
+            "cache_size": len(self._node_info_cache),
+            "hit_count": self._cache_hit_count,
+            "miss_count": self._cache_miss_count,
+            "hit_rate": f"{hit_rate:.2f}%"
+        }
+        
+        # 内存缓存字典
+        self._node_info_cache = {}
+        self._collect_cache = {}
+        self._cache_max_size = 1000  # 缓存最大条目数
+        self._cache_hit_count = 0
+        self._cache_miss_count = 0
         
 
 
@@ -110,6 +176,23 @@ class Memory:
         pass
 
     def collect_infos(self, node_list):
+        """
+        收集节点信息，添加缓存支持
+        """
+        # 生成基于节点列表的缓存键
+        node_keys = [f"{node.hashkey}_{node.nid}" for node in node_list]
+        cache_key = self._generate_cache_key("collect_infos", *sorted(node_keys))
+        
+        # 检查缓存
+        cached_result = self._get_from_cache(cache_key)
+        if cached_result is not None:
+            logger.info(f"Cache hit for collect_infos: {len(node_list)} nodes")
+            self.info_nodes = cached_result
+            return
+            
+        logger.info(f"Cache miss for collect_infos: {len(node_list)} nodes, computing...")
+        
+        # 原有逻辑
         self.init()
         def inner(node):
             if node.hashkey in self.info_nodes:
@@ -128,6 +211,9 @@ class Memory:
             return info_node
         for node in node_list:
             inner(node)
+            
+        # 缓存结果
+        self._set_to_cache(cache_key, deepcopy(self.info_nodes))
             
     def update_infos(self, node_list):
         """
@@ -219,7 +305,22 @@ class Memory:
         return outer_dependent_nodes
 
     
-    def collect_node_run_info(self, graph_node):            
+    def collect_node_run_info(self, graph_node):
+        """
+        为指定的graph_node收集其运行时信息，添加缓存支持
+        """
+        # 生成缓存键
+        cache_key = self._generate_cache_key("node_run_info", graph_node.hashkey, graph_node.nid, graph_node.is_atom)
+        
+        # 尝试从缓存获取
+        cached_result = self._get_from_cache(cache_key)
+        if cached_result is not None:
+            logger.info(f"Cache hit for node_run_info: {graph_node.nid}")
+            return cached_result
+        
+        # 缓存未命中，执行原有逻辑
+        logger.info(f"Cache miss for node_run_info: {graph_node.nid}, computing...")
+            
         if graph_node.is_atom:# For atomic tasks, set the obtained results as its Planning node
             # graph_node = graph_node.node_graph_info["outer_node"].topological_task_queue[0]
             graph_node = graph_node.node_graph_info["outer_node"]
@@ -251,6 +352,8 @@ class Memory:
             "upper_graph_precedents": upper_graph_precedents_repre
         }
         
+        # 缓存结果
+        self._set_to_cache(cache_key, result)
         return result
 
 
