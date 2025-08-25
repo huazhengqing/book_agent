@@ -30,6 +30,7 @@ recursive/.mem0/
 recursive/.cache/
 *.pyc
 *.log
+*.md
 
 output.jsonl
 done.txt

@@ -415,7 +415,7 @@ class Mem0:
                 else:
                     content_quality_score += 0.5
                 
-                # 時间新鲜度评分
+                # 時間新鲜度评分
                 if 'timestamp' in metadata:
                     try:
                         timestamp = datetime.fromisoformat(metadata['timestamp'])
@@ -503,9 +503,14 @@ class Mem0:
         self.cache_text.set(cache_key, ret)
         return ret
 
-    def _generate_queries(self, category, task_goal, context_str):
+    def _generate_queries(self, category, task_info, context_str):
         """
-        使用轻量级LLM根据任务和上下文动态生成用于检索“设计库”、“小说正文”的搜索查询词。
+        使用轻量级LLM根据任务和上下文动态生成用于检索"设计库"、"小说正文"的搜索查询词。
+        
+        Args:
+            category: "design" 或 "text"
+            task_info: 完整的任务信息JSON，包括id、goal、task_type等所有字段
+            context_str: 上下文信息
         """
         prompt_system = ""
         prompt_user = ""
@@ -513,7 +518,10 @@ class Mem0:
             if self.writing_mode == "story":
                 if self.language == "zh":
                     prompt_system = mem_story_design_queries_zh_system
-                    prompt_user = mem_story_design_queries_zh_user.format(task_goal=task_goal, context_str=context_str)
+                    prompt_user = mem_story_design_queries_zh_user.format(
+                        task_info=json.dumps(task_info, ensure_ascii=False, indent=2),
+                        context_str=context_str
+                    )
                 elif self.language == "en":
                     prompt_system = ""
                     prompt_user = ""
@@ -543,7 +551,10 @@ class Mem0:
             if self.writing_mode == "story":
                 if self.language == "zh":
                     prompt_system = mem_story_text_queries_zh_system
-                    prompt_user = mem_story_text_queries_zh_user.format(task_goal=task_goal, context_str=context_str)
+                    prompt_user = mem_story_text_queries_zh_user.format(
+                        task_info=json.dumps(task_info, ensure_ascii=False, indent=2),
+                        context_str=context_str
+                    )
                 elif self.language == "en":
                     prompt_system = ""
                     prompt_user = ""
@@ -571,7 +582,8 @@ class Mem0:
                 raise ValueError(f"writing_mode={self.writing_mode} not supported")
         else:
             raise ValueError(f"category={category} not supported")
-        logger.info(f"mem0 _generate_queries() {self.writing_mode}_{self.language}_{category}\n{task_goal}\n{prompt}")
+        
+        logger.info(f"mem0 _generate_queries() {self.writing_mode}_{self.language}_{category}\ntask_info: {task_info}")
         response = None
         if self.language == "zh":
             response = llm_client.call_fast_zh(
@@ -588,72 +600,111 @@ class Mem0:
         if response == None:
             raise ValueError("LLM response is None")
         content = response[0].message.content
-        logger.info(f"mem0 _generate_queries() {self.writing_mode}_{self.language}_{category}\n{task_goal}\n{content}")
+        logger.info(f"mem0 _generate_queries() {self.writing_mode}_{self.language}_{category}\nresponse: {content}")
         try:
             queries = json.loads(content)
             if isinstance(queries, list):
-                logger.info(f"mem0 _generate_queries() {self.writing_mode}_{self.language}_{category}\n{task_goal}\n{queries}")
+                logger.info(f"mem0 _generate_queries() {self.writing_mode}_{self.language}_{category}\nqueries: {queries}")
                 return queries
         except json.JSONDecodeError:
-            logger.error(f"Failed to decode JSON from LLM for design queries. Content: {content}")
+            logger.error(f"Failed to decode JSON from LLM for {category} queries. Content: {content}")
         return []
+
+    def _optimize_queries(self, queries):
+        """
+        查询质量优化：去重、过滤、相似度去重
+        提升检索效率，避免冗余查询
+        """
+        if not queries:
+            return []
+        
+        # 1. 基础去重和清理
+        unique_queries = []
+        seen = set()
+        for query in queries:
+            if not query or not isinstance(query, str):
+                continue
+            
+            cleaned = query.strip()
+            if not cleaned or len(cleaned) < 2:
+                continue
+            
+            if cleaned not in seen:
+                unique_queries.append(cleaned)
+                seen.add(cleaned)
+        
+        # 2. 长度过滤 - 过长或过短的查询通常质量不高
+        length_filtered = [
+            q for q in unique_queries 
+            if 2 <= len(q) <= 30  # 适合中文的长度范围
+        ]
+        
+        # 3. 相似度去重 - 移除过于相似的查询
+        final_queries = []
+        for query in length_filtered:
+            is_similar = False
+            for existing in final_queries:
+                # 简单的字符重叠相似度检测
+                query_chars = set(query)
+                existing_chars = set(existing)
+                overlap_ratio = len(query_chars & existing_chars) / len(query_chars | existing_chars)
+                
+                # 如果重叠度过高，跳过这个查询
+                if overlap_ratio > 0.7:
+                    is_similar = True
+                    break
+            
+            if not is_similar:
+                final_queries.append(query)
+        
+        # 4. 查询数量控制 - 避免过多查询影响性能
+        if len(final_queries) > 20:
+            # 保留任务目标查询，其他按长度和复杂度排序
+            task_queries = [q for q in final_queries if any(keyword in q for keyword in ["目标", "任务", "写", "创作"])]
+            other_queries = [q for q in final_queries if q not in task_queries]
+            
+            # 按查询复杂度排序（包含更多关键词的查询优先）
+            other_queries.sort(key=lambda x: len(x.split()), reverse=True)
+            final_queries = task_queries + other_queries[:20-len(task_queries)]
+        
+        return final_queries
 
     def get_story_outer_graph_dependent(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
         """
         检索设计结果
         替换 agent/agents/regular.py 中的 get_llm_output 中的 to_run_outer_graph_dependent
-        当任务 是write任务时，必需要检索 叙事风格: 确定叙事视角、语言风格、文笔基调、核心叙事策略（如展示/讲述比例）
-        工作流程：
-            1. 动态查询生成 ：通过 _generate_design_queries 方法，使用轻量级 LLM 根据任务目标和上下文生成搜索查询词
-            2. 关键词增强 ：
-                - 将任务目标也作为查询词
-                - 从最新内容中提取关键词
-                - 从相关设计中提取关键词
-            3. 叙事风格检索（针对写作任务）：
-                - 检索叙事视角设定
-                - 检索语言风格指南
-                - 检索文笔基调规范
-                - 检索核心叙事策略（如展示/讲述比例）
-            4. 内容检索 ：调用 search 方法从向量数据库中检索相关设计内容
-            5. 结果优化 ：
-                - 按层级（越高越重要）、相关度评分、内容长度和时间戳排序
-                - 去重处理，避免重复内容
+        
+        优化后的检索词生成策略：
+        1. LLM智能查询生成 - 基于任务和上下文的语义化查询
+        2. 条件性关键词补充 - 仅在LLM查询不足时使用传统关键词提取
+        3. 任务类型特定查询 - 针对写作任务的叙事风格查询增强
+        4. 查询质量过滤 - 去重、长度过滤、相似度去重
         """
         task_id = task_info.get('id', '')
         if not task_id:
             raise ValueError("Task ID not found in task_info")
-        task_goal = task_info.get('goal', '')
-        task_type = task_info.get('task_type', '')
         
-        # 使用LLM动态生成查询 
-        all_queries = self._generate_queries(
+        # 1. LLM智能查询生成（主要策略）
+        llm_queries = self._generate_queries(
             category="design",
-            task_goal=task_goal,
+            task_info=task_info,
             context_str=f"相关设计:\n{same_graph_dependent_designs}\n\n最新内容:\n{latest_content}"
         )
-
-        all_queries.append(task_goal)
         
-        # 针对写作任务，添加叙事风格相关的必需查询
-        if task_type and 'write' in task_type.lower():
-            narrative_style_queries = [
-                "叙事风格",
-                "叙事视角 人称设定 POV",
-                "语言风格 文笔特色 措辞风格", 
-                "文笔基调 情感基调 氛围设定",
-                "叙事策略 展示比例 讲述比例",
-                "叙事技巧 描写手法 表现手法",
-                "章节风格 段落风格 句式特点",
-                "对话风格 内心独白 心理描写",
-                "节奏控制 张弛有度 情节节奏"
-            ]
-            all_queries.extend(narrative_style_queries)
-
-        combined_content = f"{latest_content}\n\n{same_graph_dependent_designs}"
-        if combined_content:
-            all_queries.extend(self.get_keyword_extractor().extract_from_markdown(combined_content))
-
-        final_queries = list(dict.fromkeys(all_queries))
+        # 2. 核心查询保证 - 使用任务目标作为基础查询
+        task_goal = task_info.get('goal', '')
+        all_queries = [task_goal] + llm_queries
+        # 3. 条件性关键词补充（仅在查询数量不足时）
+        if len(all_queries) < 10:  # 提升阈值减少关键词提取调用
+            combined_content = f"{latest_content}\n\n{same_graph_dependent_designs}"
+            if combined_content and len(combined_content.strip()) > 50:
+                # 使用更高效的关键词提取参数
+                keywords = self.get_keyword_extractor().extract_from_markdown(
+                    combined_content, top_k=min(8, 14 - len(all_queries))
+                )
+                all_queries.extend(keywords)
+        # 4. 查询质量优化
+        final_queries = self._optimize_queries(all_queries)
         
         cur_hierarchy_level = len(task_id.split(".")) if task_id else 1
         filters = {
@@ -724,26 +775,35 @@ class Mem0:
         """
         检索小说已经写的正文内容
         替换 agent/agents/regular.py 中的 get_llm_output 中的 memory.article
+        
+        优化后的检索策略：与设计检索类似，但侧重正文内容的连续性
         """
         task_id = task_info.get('id', '') 
         if not task_id:
             raise ValueError("Task ID not found in task_info")
-        task_goal = task_info.get('goal', '')
         
-        # 使用LLM动态生成查询
-        all_queries = self._generate_queries(
+        # 1. LLM智能查询生成（主要策略）
+        llm_queries = self._generate_queries(
             category="text",
-            task_goal=task_goal,
+            task_info=task_info,
             context_str=f"最新正文内容:\n{latest_content}\n\n相关设计:\n{same_graph_dependent_designs}"
         )
 
-        all_queries.append(task_goal)
+        # 2. 核心查询保证 - 使用任务目标作为基础查询
+        task_goal = task_info.get('goal', '')
+        all_queries = [task_goal] + llm_queries
 
-        combined_content = f"{latest_content}\n\n{same_graph_dependent_designs}"
-        if combined_content:
-            all_queries.extend(self.get_keyword_extractor().extract_from_markdown(combined_content))
+        # 3. 条件性关键词补充（仅在查询数量不足时）
+        if len(all_queries) < 8:  # 提升阈值专注文本连续性
+            combined_content = f"{latest_content}\n\n{same_graph_dependent_designs}"
+            if combined_content and len(combined_content.strip()) > 50:
+                keywords = self.get_keyword_extractor().extract_from_markdown(
+                    combined_content, top_k=min(6, 12 - len(all_queries))
+                )
+                all_queries.extend(keywords)
 
-        final_queries = list(dict.fromkeys(all_queries))
+        # 4. 查询质量优化
+        final_queries = self._optimize_queries(all_queries)
         
         all_results = self.search(hashkey, final_queries, "text", limit=500)
         
