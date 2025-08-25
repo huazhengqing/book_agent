@@ -1,5 +1,5 @@
 #coding: utf8
-import re
+import math
 from collections import defaultdict
 from typing import List
 import stopwordsiso
@@ -102,14 +102,15 @@ class KeywordExtractorEn:
             if not processed_chunks:
                 return []
 
+            # 优化KeyBERT参数，提升英文语义理解
             batch_results = self.model.extract_keywords(
                 processed_chunks,
-                keyphrase_ngram_range=(1, 3),
+                keyphrase_ngram_range=(1, 4),  # 扩展到4-gram，适合英文词组
                 stop_words="english",
                 use_mmr=True,
-                diversity=0.7,
-                top_n=top_k,
-                batch_size=32
+                diversity=0.75,  # 较高的多样性
+                top_n=min(top_k * 3, 60),  # 提取更多候选词用于后续筛选
+                batch_size=16  # 减少批次大小，提升处理稳定性
             )
 
             for idx, keywords_with_scores in enumerate(batch_results):
@@ -117,7 +118,56 @@ class KeywordExtractorEn:
                     all_keywords_with_scores[kw] += score
                     keyword_chunk_count[kw] += 1
 
-            sorted_keywords = sorted(all_keywords_with_scores.items(), key=lambda x: x[1], reverse=True)
+            # 优化关键词权重计算算法 - 多维度评分机制
+            chunk_count = len(processed_chunks)
+            weighted_keywords = {}
+            for kw, score in all_keywords_with_scores.items():
+                # 频次因子：平衡出现频率和过度普遍性
+                freq_ratio = keyword_chunk_count[kw] / chunk_count
+                if freq_ratio > 0.8:  # 过于频繁的词降权
+                    freq_factor = 0.7 + 0.3 * (1 - freq_ratio)
+                else:
+                    freq_factor = math.sqrt(freq_ratio) * 1.2  # 适度出现的词提权
+                
+                # 长度因子：偏好中等长度的英文词组
+                length_factor = 1.0
+                words = kw.split()
+                word_count = len(words)
+                if word_count == 1:
+                    word_len = len(kw)
+                    if 3 <= word_len <= 8:  # 单词适中长度
+                        length_factor = 1.2
+                    elif word_len < 3:  # 过短单词
+                        length_factor = 0.7
+                    elif word_len > 12:  # 过长单词
+                        length_factor = 0.8
+                elif 2 <= word_count <= 3:  # 首选词组长度
+                    length_factor = 1.4
+                elif word_count > 4:  # 过长词组
+                    length_factor = 0.6
+                
+                # 语义多样性因子：避免过于相似的关键词
+                diversity_factor = 1.0
+                kw_lower = kw.lower()
+                for existing_kw in weighted_keywords.keys():
+                    existing_lower = existing_kw.lower()
+                    # 检查子串包含和单词重叠
+                    if (kw_lower in existing_lower or existing_lower in kw_lower or
+                        len(set(kw_lower.split()) & set(existing_lower.split())) / 
+                        max(len(kw_lower.split()), len(existing_lower.split())) > 0.5):
+                        diversity_factor *= 0.85
+                
+                # 英文大小写一致性加分
+                case_factor = 1.0
+                if kw.istitle() or (word_count > 1 and all(w.istitle() for w in words)):  # 正规大小写
+                    case_factor = 1.1
+                
+                # 综合权重计算
+                final_score = score * freq_factor * length_factor * diversity_factor * case_factor
+                weighted_keywords[kw] = final_score
+
+            # 按加权分数排序
+            sorted_keywords = sorted(weighted_keywords.items(), key=lambda x: x[1], reverse=True)
             final_keywords = [kw for kw, _ in sorted_keywords][:top_k]
 
             self.cache.set(cache_key, final_keywords)
@@ -151,35 +201,117 @@ class KeywordExtractorEn:
         return text
 
     def split_long_text(self, text):
-        # 基于NLTK的句子感知分块
-        sentences = sent_tokenize(text)
+        # 改进的段落和句子感知分块
+        paragraphs = text.split('\n\n')
         chunks = []
         current_chunk = ''
         
-        for sentence in sentences:
-            # 计算包含当前句子的预估长度
-            estimated_length = len(current_chunk) + len(sentence)
+        for paragraph in paragraphs:
+            if not paragraph.strip():
+                continue
+                
+            # 使用NLTK进行句子分割
+            sentences = sent_tokenize(paragraph.strip())
             
-            if estimated_length > self.chunk_size:
-                if current_chunk:
-                    chunks.append(current_chunk)
-                    # 保留最后200词作为重叠上下文
-                    overlap_words = current_chunk.split()[-self.chunk_overlap//4:]
-                    current_chunk = ' '.join(overlap_words) + ' ' + sentence
-                else:  # 处理超长单句
-                    chunk = sentence[:self.chunk_size]
-                    chunks.append(chunk)
-                    current_chunk = sentence[len(chunk)-self.chunk_overlap:] 
-            else:
-                current_chunk += ' ' + sentence
+            for sentence in sentences:
+                # 计算包含当前句子的预估长度
+                estimated_length = len(current_chunk) + len(sentence) + 2  # +2 for separators
+                
+                if estimated_length > self.chunk_size:
+                    if current_chunk.strip():
+                        chunks.append(current_chunk.strip())
+                        # 智能重叠：保留关键上下文
+                        overlap_text = self._get_overlap_context(current_chunk)
+                        current_chunk = overlap_text + ' ' + sentence
+                    else:  # 处理超长单句
+                        if len(sentence) > self.chunk_size:
+                            # 超长句子按单词边界分割
+                            words = sentence.split()
+                            chunk_words = []
+                            current_length = 0
+                            
+                            for word in words:
+                                if current_length + len(word) + 1 > self.chunk_size:
+                                    if chunk_words:
+                                        chunks.append(' '.join(chunk_words))
+                                        # 保留重叠单词
+                                        overlap_count = min(self.chunk_overlap // 10, len(chunk_words) // 3)
+                                        chunk_words = chunk_words[-overlap_count:] + [word]
+                                        current_length = sum(len(w) + 1 for w in chunk_words)
+                                    else:
+                                        chunks.append(word)
+                                        chunk_words = []
+                                        current_length = 0
+                                else:
+                                    chunk_words.append(word)
+                                    current_length += len(word) + 1
+                            
+                            if chunk_words:
+                                current_chunk = ' '.join(chunk_words)
+                            else:
+                                current_chunk = ''
+                        else:
+                            current_chunk = sentence
+                else:
+                    current_chunk += ('\n' if current_chunk and not current_chunk.endswith('\n') else '') + sentence
         
         if current_chunk.strip():
             chunks.append(current_chunk.strip())
-        return chunks
+        
+        return [chunk for chunk in chunks if chunk.strip()]
+    
+    def _get_overlap_context(self, text):
+        """获取重叠上下文，优先保留完整句子"""
+        if len(text) <= self.chunk_overlap:
+            return text
+        
+        # 尝试从末尾找到完整句子
+        sentences = sent_tokenize(text)
+        if len(sentences) <= 1:
+            # 如果只有一个句子，按单词返回末尾部分
+            words = text.split()
+            overlap_words = min(self.chunk_overlap // 10, len(words) // 3)
+            return ' '.join(words[-overlap_words:]) if overlap_words > 0 else ''
+        
+        # 从末尾选择适合的句子数量
+        overlap_text = ''
+        for i in range(len(sentences) - 1, -1, -1):
+            candidate = ' '.join(sentences[i:])
+            if len(candidate) <= self.chunk_overlap:
+                overlap_text = candidate
+            else:
+                break
+        
+        return overlap_text if overlap_text else text[-self.chunk_overlap:].lstrip()
 
     def preprocess_chunk(self, chunk):
-        words = re.findall(r'\b[\w-]{2,}\b', chunk, flags=re.IGNORECASE)
-        filtered = [w.lower() for w in words if w.lower() not in self.base_stop_words]
+        # 保留基本标点符号的语义信息
+        chunk = re.sub(r'[,]', ' COMMA ', chunk)
+        chunk = re.sub(r'[.!?]', ' PERIOD ', chunk)
+        chunk = re.sub(r'[;:]', ' SEMICOLON ', chunk)
+        
+        # 提取单词，包括连字符单词
+        words = re.findall(r'\b[\w-]{2,}\b|COMMA|PERIOD|SEMICOLON', chunk, flags=re.IGNORECASE)
+        
+        # 改进的过滤策略
+        filtered = []
+        prev_punct = False
+        
+        for w in words:
+            w_lower = w.lower()
+            
+            # 保留标点符号标记用于语义理解
+            if w in ['COMMA', 'PERIOD', 'SEMICOLON']:
+                if not prev_punct:  # 避免连续标点
+                    filtered.append(w)
+                prev_punct = True
+            # 过滤停用词和过短单词
+            elif w_lower not in self.base_stop_words and len(w) >= 2:
+                # 保留大写开头的单词（可能是专有名词）
+                if w[0].isupper() or w_lower not in ['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'has', 'was', 'one', 'our', 'out', 'day', 'get', 'use', 'man', 'new', 'now', 'way', 'may', 'say']:
+                    filtered.append(w_lower if not w[0].isupper() else w)
+                prev_punct = False
+        
         return ' '.join(filtered)
 
 

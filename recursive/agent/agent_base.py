@@ -136,7 +136,7 @@ class SinglePlanningAgent(Agent):
             return result
         
         plans = [{
-            "id": 0,
+            "id": node.nid,  # Use current node ID
             "dependency": [],
             "goal": node.task_info["goal"]
         }]

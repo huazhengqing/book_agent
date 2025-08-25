@@ -99,14 +99,15 @@ class KeywordExtractorZh:
             if not processed_chunks:
                 return []
 
+            # 优化KeyBERT参数，提升中文语义理解
             batch_results = self.model.extract_keywords(
                 processed_chunks,
-                keyphrase_ngram_range=(1, 2),
+                keyphrase_ngram_range=(1, 3),  # 扩展到3-gram，捕获更多中文词组
                 stop_words="chinese",
                 use_mmr=True,
-                diversity=0.6,
-                top_n=top_k,
-                batch_size=32
+                diversity=0.7,  # 提高多样性
+                top_n=min(top_k * 2, 50),  # 提取更多候选词用于后续筛选
+                batch_size=16  # 减少批次大小，提升处理稳定性
             )
 
             for idx, keywords_with_scores in enumerate(batch_results):
@@ -114,12 +115,38 @@ class KeywordExtractorZh:
                     all_keywords_with_scores[kw] += score
                     keyword_chunk_count[kw] += 1
 
-            # 优化关键词权重计算算法
+            # 优化关键词权重计算算法 - 多维度评分机制
             chunk_count = len(processed_chunks)
             weighted_keywords = {}
             for kw, score in all_keywords_with_scores.items():
-                freq_factor = math.sqrt(keyword_chunk_count[kw] / chunk_count)
-                weighted_keywords[kw] = score * freq_factor
+                # 频次因子：平衡出现频率和过度普遍性
+                freq_ratio = keyword_chunk_count[kw] / chunk_count
+                if freq_ratio > 0.8:  # 过于频繁的词降权
+                    freq_factor = 0.7 + 0.3 * (1 - freq_ratio)
+                else:
+                    freq_factor = math.sqrt(freq_ratio) * 1.2  # 适度出现的词提权
+                
+                # 长度因子：偏好2-4字的关键词
+                length_factor = 1.0
+                kw_len = len(kw)
+                if 2 <= kw_len <= 4:
+                    length_factor = 1.3
+                elif kw_len == 1:
+                    length_factor = 0.6
+                elif kw_len > 6:
+                    length_factor = 0.8
+                
+                # 语义多样性因子：避免过于相似的关键词
+                diversity_factor = 1.0
+                for existing_kw in weighted_keywords.keys():
+                    # 简单的字符重叠检测
+                    common_chars = set(kw) & set(existing_kw)
+                    if len(common_chars) / max(len(kw), len(existing_kw)) > 0.6:
+                        diversity_factor *= 0.9
+                
+                # 综合权重计算
+                final_score = score * freq_factor * length_factor * diversity_factor
+                weighted_keywords[kw] = final_score
 
             # 按加权分数排序
             sorted_keywords = sorted(weighted_keywords.items(), key=lambda x: x[1], reverse=True)
@@ -151,36 +178,101 @@ class KeywordExtractorZh:
         return text
 
     def split_long_text(self, text):
-        # 基于中文标点的句子感知分块
-        sentences = re.split(r'([。！？；;!?])', text)
+        # 改进的句子感知分块，考虑段落结构
+        # 首先按段落分割
+        paragraphs = text.split('\n\n')
         chunks = []
         current_chunk = ''
         
-        # 合并句子时保留分隔符
-        for i in range(0, len(sentences)-1, 2):
-            sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else '')
+        for paragraph in paragraphs:
+            if not paragraph.strip():
+                continue
+                
+            # 对每个段落进行句子分割
+            sentences = re.split(r'([。！？；;!?])', paragraph)
             
-            # 动态调整块大小
-            if len(current_chunk) + len(sentence) > self.chunk_size:
-                if current_chunk:
-                    chunks.append(current_chunk)
-                    current_chunk = sentence[-self.chunk_overlap:]  # 保留重叠部分
-                else:  # 处理超长单句
-                    chunks.append(sentence[:self.chunk_size])
-                    current_chunk = sentence[self.chunk_size - self.chunk_overlap:]
-            else:
-                current_chunk += sentence
+            # 合并句子时保留分隔符
+            for i in range(0, len(sentences)-1, 2):
+                sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else '')
+                
+                # 检查是否需要新建块
+                estimated_length = len(current_chunk) + len(sentence) + 2  # +2 for potential separators
+                
+                if estimated_length > self.chunk_size:
+                    if current_chunk.strip():
+                        chunks.append(current_chunk.strip())
+                        # 智能重叠：保留关键上下文
+                        overlap_text = self._get_overlap_context(current_chunk)
+                        current_chunk = overlap_text + sentence
+                    else:  # 处理超长单句
+                        if len(sentence) > self.chunk_size:
+                            # 超长句子强制分割
+                            chunks.append(sentence[:self.chunk_size])
+                            current_chunk = sentence[self.chunk_size - self.chunk_overlap:]
+                        else:
+                            current_chunk = sentence
+                else:
+                    current_chunk += ('\n' if current_chunk and not current_chunk.endswith('\n') else '') + sentence
         
-        if current_chunk:
-            chunks.append(current_chunk)
-        return [chunk for chunk in chunks if chunk]
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
+        
+        return [chunk for chunk in chunks if chunk.strip()]
+    
+    def _get_overlap_context(self, text):
+        """获取重叠上下文，优先保留完整句子"""
+        if len(text) <= self.chunk_overlap:
+            return text
+        
+        # 尝试从末尾找到完整句子
+        overlap_start = len(text) - self.chunk_overlap
+        sentence_markers = ['。', '！', '？', '；', ';', '!', '?']
+        
+        # 向前查找句子边界
+        for i in range(overlap_start, len(text)):
+            if text[i] in sentence_markers:
+                return text[i+1:].lstrip()
+        
+        # 如果没找到句子边界，返回字符重叠
+        return text[-self.chunk_overlap:].lstrip()
 
 
     def preprocess_chunk(self, chunk):
+        # 清理特殊字符，但保留关键标点
         chunk = re.sub(r'[\u3000-\u303F\uff00-\uffef\u2018-\u201f]', ' ', chunk)
+        # 保留基本标点符号的语义信息
+        chunk = re.sub(r'[，,]', ' COMMA ', chunk)
+        chunk = re.sub(r'[。！？]', ' PERIOD ', chunk)
+        
+        # 使用jieba分词
         words = jieba.lcut(chunk, cut_all=False)
-        filtered = [w for w in words if w not in self.base_stop_words and len(w) > 1]
-        return " ".join(filtered)
+        
+        # 改进的过滤策略
+        filtered = []
+        for w in words:
+            w = w.strip()
+            if not w:
+                continue
+            # 保留标点符号标记用于语义理解
+            if w in ['COMMA', 'PERIOD']:
+                filtered.append(w)
+            # 过滤停用词和单字符（除非是重要单字）
+            elif w not in self.base_stop_words and (len(w) > 1 or w in ['我', '你', '他', '她', '它']):
+                filtered.append(w)
+        
+        # 移除连续的标点符号标记
+        result = []
+        prev_punct = False
+        for w in filtered:
+            if w in ['COMMA', 'PERIOD']:
+                if not prev_punct:
+                    result.append(w)
+                prev_punct = True
+            else:
+                result.append(w)
+                prev_punct = False
+        
+        return " ".join(result)
 
 
 ###############################################################################

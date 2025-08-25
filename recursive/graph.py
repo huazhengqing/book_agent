@@ -428,7 +428,7 @@ class AbstractNode(ABC):
     def plan2graph(self, raw_plan):
         if len(raw_plan) == 0: # Atomic task, still create an execution graph, but the execution graph has only one execute node, iterating through required_task_info_keys and retrieving them.
             raw_plan.append({
-                "id": 0,
+                "id": self.nid,  # Use current task ID for atomic task
                 "dependency": [],
                 "atom": True,
             })

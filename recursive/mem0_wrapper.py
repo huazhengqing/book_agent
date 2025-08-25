@@ -62,6 +62,7 @@ from datetime import datetime
 
 """
 
+
 class Mem0:
     def __init__(self, writing_mode, language):
         # 确定写作模式（story, book, report）
@@ -158,7 +159,7 @@ class Mem0:
 
         self.client = None
 
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__)))
         cache_dir = os.path.join(project_root, ".cache", "mem0_text")
         os.makedirs(cache_dir, exist_ok=True)
         self.cache_text = diskcache.Cache(cache_dir, size_limit=1024 * 1024 * 300)
@@ -166,6 +167,10 @@ class Mem0:
         cache_dir = os.path.join(project_root, ".cache", "mem0_design")
         os.makedirs(cache_dir, exist_ok=True)
         self.cache_design = diskcache.Cache(cache_dir, size_limit=1024 * 1024 * 300)
+        
+        cache_dir = os.path.join(project_root, ".cache", "mem0_full_plan")
+        os.makedirs(cache_dir, exist_ok=True)
+        self.cache_full_plan = diskcache.Cache(cache_dir, size_limit=1024 * 1024 * 100)
         
     def get_client(self):
         if not self.client:
@@ -196,12 +201,14 @@ class Mem0:
 
     def add(self, hashkey, content, content_type, task_info):
         task_id = task_info.get("id")
-        if not task_id:
-            raise ValueError("Task ID not found in task_info")
+        if not task_id or task_id == "" or task_id == "0":
+            raise ValueError("Task ID not found in task_info {task_id} \n task_info: {task_info}")
         task_type = task_info.get("task_type")
         task_goal = task_info.get("goal")
-        dependency = task_info.get("dependency")
+        dependency = task_info.get("dependency", [])
         task_str = json.dumps(task_info, ensure_ascii=False)
+        dependency_str = json.dumps(dependency, ensure_ascii=False)
+        logger.info(f"mem0 add() {task_info}")
 
         if content_type == "text_content":
             category = "text"
@@ -211,23 +218,18 @@ class Mem0:
         mem0_content = ""
         if content_type == "text_content":
             mem0_content = content
+            self.cache_text.clear()
         elif content_type == "task_decomposition":
-            if isinstance(content, dict):
-                content_str = json.dumps(content, ensure_ascii=False)
-            else:
-                content_str = str(content)
-            mem0_content = f"""任务：\n{task_str}\n规划分解结果：\n{content_str}"""
+            mem0_content = f"""任务：\n{task_str}\n规划分解结果：\n{content}"""
+            self.cache_full_plan.clear()
         elif content_type == "design_result":
             mem0_content = f"""任务：\n{task_str}\n设计结果：\n{content}"""
+            self.cache_design.clear()
         elif content_type == "task_update":
-            if isinstance(content, dict):
-                content_str = json.dumps(content, ensure_ascii=False)
-            else:
-                content_str = str(content)
-            mem0_content = f"""任务更新：\n{content_str}"""
+            mem0_content = f"""任务更新：\n{content}"""
+            self.cache_full_plan.clear()
 
         parent_task_id = ".".join(task_id.split(".")[:-1]) if task_id and "." in task_id else ""
-        dependency_str = json.dumps(dependency, ensure_ascii=False)
         mem_metadata = {
             "category": category,
             "content_type": content_type,
@@ -236,8 +238,8 @@ class Mem0:
             "hierarchy_level": len(task_id.split(".")),
             "parent_task_id": parent_task_id,
             "dependency": dependency_str,
-            "content_length": len(mem0_content),
-            "content_hash": hashlib.md5(mem0_content.encode('utf-8')).hexdigest()
+            # "content_length": len(mem0_content),
+            # "content_hash": hashlib.md5(mem0_content.encode('utf-8')).hexdigest()
         }
         
         logger.info(f"mem0 add() {self.writing_mode}_{self.language}_{hashkey}_{category}\n{mem0_content}\n{mem_metadata}")
@@ -246,23 +248,151 @@ class Mem0:
             user_id=f"{self.writing_mode}_{self.language}_{hashkey}_{category}",
             metadata=mem_metadata
         )
-        
-        if category == "design":
-            self.cache_design.clear()
-        if category == "text":
-            self.cache_text.clear()
 
     def search(self, hashkey, querys, category, limit=1, filters=None):
-        query = " ".join(querys)
-        logger.info(f"mem0 search() {self.writing_mode}_{self.language}_{hashkey}_{category}\n{query}\n{limit}\n{filters}")
-        results = self.get_client().search(
-            query=query,
-            user_id=f"{self.writing_mode}_{self.language}_{hashkey}_{category}",
-            limit=limit,
-            filters=filters
-        )
-        logger.info(f"mem0 search() {self.writing_mode}_{self.language}_{hashkey}_{category}\n{results}")
-        return results
+        """
+        优化的批量查询实现，智能处理多关键词检索，提升检索质量和召回率
+        """
+        if not querys:
+            return []
+        
+        # 去重和预处理查询列表
+        unique_queries = list(dict.fromkeys([q.strip() for q in querys if q and q.strip()]))
+        if not unique_queries:
+            return []
+        
+        user_id = f"{self.writing_mode}_{self.language}_{hashkey}_{category}"
+        
+        # 智能查询策略选择 - 大幅提升关键词处理能力
+        if len(unique_queries) == 1:
+            # 单个查询，直接执行
+            query = unique_queries[0]
+        elif len(unique_queries) <= 8:  # 提升到8个关键词
+            # 中等数量查询，使用OR逻辑组合
+            query = " OR ".join([f"({q})" for q in unique_queries])
+        elif len(unique_queries) <= 15:  # 处理更多关键词
+            # 较多查询，分组处理：重要关键词用OR，其他用空格连接
+            primary_queries = unique_queries[:8]  # 前8个作为主要查询
+            secondary_queries = unique_queries[8:15]  # 后面的作为辅助
+            primary_part = " OR ".join([f"({q})" for q in primary_queries])
+            secondary_part = " ".join(secondary_queries)
+            query = f"({primary_part}) {secondary_part}"
+            logger.info(f"Using hybrid strategy: {len(primary_queries)} OR queries + {len(secondary_queries)} AND queries")
+        else:
+            # 大量查询，智能分层处理
+            # 分为三层：核心关键词(OR)、重要关键词(AND)、补充关键词(AND)
+            core_queries = unique_queries[:6]  # 核心查询
+            important_queries = unique_queries[6:12]  # 重要查询
+            supplement_queries = unique_queries[12:20]  # 补充查询，最多20个
+            
+            core_part = " OR ".join([f"({q})" for q in core_queries])
+            important_part = " ".join(important_queries) if important_queries else ""
+            supplement_part = " ".join(supplement_queries) if supplement_queries else ""
+            
+            query_parts = [f"({core_part})"]
+            if important_part:
+                query_parts.append(important_part)
+            if supplement_part:
+                query_parts.append(supplement_part)
+            
+            query = " ".join(query_parts)
+            logger.info(f"Using layered strategy: {len(core_queries)} core + {len(important_queries)} important + {len(supplement_queries)} supplement queries")
+            
+            # 记录被截断的查询数量
+            if len(unique_queries) > 20:
+                logger.info(f"Truncated {len(unique_queries) - 20} queries to maintain performance")
+        
+        logger.info(f"mem0 search() {user_id}\nOptimized query: {query[:200]}...\nTotal keywords: {len(unique_queries)}\nLimit: {limit}\nFilters: {filters}")
+        
+        try:
+            # 执行查询
+            results = self.get_client().search(
+                query=query,
+                user_id=user_id,
+                limit=limit,
+                filters=filters
+            )
+            
+            # 统一结果格式处理
+            if isinstance(results, dict):
+                final_results = results.get('results', [])
+            elif isinstance(results, list):
+                final_results = results
+            else:
+                final_results = []
+            
+            logger.info(f"mem0 search() completed: {len(final_results)} results for {len(unique_queries)} queries")
+            return final_results
+            
+        except Exception as e:
+            logger.error(f"Optimized search failed: {e}")
+            # 容错降级：分批次检索策略
+            logger.info("Falling back to batch retrieval strategy")
+            
+            try:
+                all_fallback_results = []
+                # 分批处理，每批最多8个关键词
+                batch_size = 8
+                for i in range(0, min(len(unique_queries), 16), batch_size):  # 最多处理16个关键词
+                    batch_queries = unique_queries[i:i + batch_size]
+                    batch_query = " OR ".join([f"({q})" for q in batch_queries])
+                    
+                    batch_results = self.get_client().search(
+                        query=batch_query,
+                        user_id=user_id,
+                        limit=max(limit // 2, 50),  # 每批次适当降低limit
+                        filters=filters
+                    )
+                    
+                    if isinstance(batch_results, dict):
+                        batch_final = batch_results.get('results', [])
+                    elif isinstance(batch_results, list):
+                        batch_final = batch_results
+                    else:
+                        batch_final = []
+                    
+                    all_fallback_results.extend(batch_final)
+                
+                # 去重并按分数排序
+                seen_memories = set()
+                unique_results = []
+                for result in all_fallback_results:
+                    memory = result.get('memory', '')
+                    if memory and memory not in seen_memories:
+                        unique_results.append(result)
+                        seen_memories.add(memory)
+                
+                # 按相关性分数排序并限制结果数量
+                unique_results.sort(key=lambda x: x.get('score', 0), reverse=True)
+                final_fallback_results = unique_results[:limit]
+                
+                logger.info(f"Batch fallback search completed: {len(final_fallback_results)} results from {len(unique_queries)} queries")
+                return final_fallback_results
+                
+            except Exception as e2:
+                logger.error(f"Batch fallback search also failed: {e2}")
+                # 最后的降级策略：使用前5个最重要的关键词
+                try:
+                    simple_query = " ".join(unique_queries[:5])
+                    logger.info(f"Final fallback to simple query: {simple_query}")
+                    
+                    simple_results = self.get_client().search(
+                        query=simple_query,
+                        user_id=user_id,
+                        limit=limit,
+                        filters=filters
+                    )
+                    
+                    if isinstance(simple_results, dict):
+                        return simple_results.get('results', [])
+                    elif isinstance(simple_results, list):
+                        return simple_results
+                    else:
+                        return []
+                        
+                except Exception as e3:
+                    logger.error(f"All search strategies failed: {e3}")
+                    return []
         
     def get_outer_graph_dependent(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
         s = f"{hashkey}\n{task_info}\n{same_graph_dependent_designs}\n{latest_content}"
@@ -461,16 +591,52 @@ class Mem0:
         }
         all_results = self.search(hashkey, final_queries, "design", limit=500, filters=filters)
         
-        # 按重要性和层级排序，优化排序策略。使用 reverse=True 替代对数值和字符串使用负号。
+        # 优化的多维度排序策略，提升检索结果质量
         def sort_key_design(x):
             meta = x.get('metadata', {})
-            # 解析时间戳，如果不存在或格式错误，则使用一个很早的时间
+            
+            # 解析时间戳
             ts_str = meta.get('timestamp', '')
             try:
                 timestamp = datetime.fromisoformat(ts_str) if ts_str else datetime.min
             except (ValueError, TypeError):
                 timestamp = datetime.min
-            return meta.get('hierarchy_level', 0), x.get('score', 0), meta.get('content_length', 0), timestamp
+            
+            # 多维度评分系统
+            hierarchy_level = meta.get('hierarchy_level', 0)
+            base_score = x.get('score', 0.0)
+            content_length = meta.get('content_length', 0)
+            
+            # 层级权重：越高层级越重要
+            hierarchy_weight = hierarchy_level * 100
+            
+            # 相关性权重：基础分数 * 50
+            relevance_weight = base_score * 50
+            
+            # 内容丰富度权重：适中长度最优
+            if content_length < 50:
+                length_weight = content_length * 0.1  # 过短内容降权
+            elif content_length <= 500:
+                length_weight = content_length * 0.3  # 适中内容加权
+            else:
+                length_weight = 500 * 0.3 + (content_length - 500) * 0.1  # 过长内容稍微降权
+            
+            # 时间新鲜度权重：较新的内容加分
+            time_diff_days = (datetime.now() - timestamp).days
+            if time_diff_days <= 1:
+                time_weight = 20  # 最新内容
+            elif time_diff_days <= 7:
+                time_weight = 15  # 近期内容
+            elif time_diff_days <= 30:
+                time_weight = 10  # 中期内容
+            else:
+                time_weight = 5   # 早期内容
+            
+            # 综合评分
+            final_score = hierarchy_weight + relevance_weight + length_weight + time_weight
+            
+            return final_score
+        
         sorted_results = sorted(all_results, key=sort_key_design, reverse=True)
         
         combined_results = []
@@ -510,15 +676,63 @@ class Mem0:
         
         all_results = self.search(hashkey, final_queries, "text", limit=500)
         
-        # 按时间戳和相关性排序，优先最新且相关的内容。使用 reverse=True。
+        # 优化的文本内容排序策略，优先时间新鲜度和相关性
         def sort_key_text(x):
             meta = x.get('metadata', {})
+            
+            # 解析时间戳
             ts_str = meta.get('timestamp', '')
             try:
                 timestamp = datetime.fromisoformat(ts_str) if ts_str else datetime.min
             except (ValueError, TypeError):
                 timestamp = datetime.min
-            return timestamp, x.get('score', 0), meta.get('hierarchy_level', 0), meta.get('content_length', 0)
+            
+            # 多维度评分系统
+            base_score = x.get('score', 0.0)
+            hierarchy_level = meta.get('hierarchy_level', 0)
+            content_length = meta.get('content_length', 0)
+            
+            # 时间新鲜度权重：最重要的因素
+            time_diff_seconds = (datetime.now() - timestamp).total_seconds()
+            if time_diff_seconds <= 3600:  # 1小时内
+                time_weight = 200
+            elif time_diff_seconds <= 86400:  # 1天内
+                time_weight = 150
+            elif time_diff_seconds <= 604800:  # 1周内
+                time_weight = 100
+            elif time_diff_seconds <= 2592000:  # 1个月内
+                time_weight = 50
+            else:
+                time_weight = 10
+            
+            # 相关性权重：高相关性内容优先
+            relevance_weight = base_score * 80
+            
+            # 层级权重：与当前任务层级越接近越好
+            task_hierarchy = len(task_id.split(".")) if task_id else 1
+            level_diff = abs(hierarchy_level - task_hierarchy)
+            if level_diff == 0:
+                hierarchy_weight = 30  # 相同层级
+            elif level_diff == 1:
+                hierarchy_weight = 20  # 相邻层级
+            elif level_diff == 2:
+                hierarchy_weight = 10  # 较远层级
+            else:
+                hierarchy_weight = 5   # 很远层级
+            
+            # 内容丰富度权重：中等长度内容更有价值
+            if content_length < 100:
+                length_weight = content_length * 0.1
+            elif content_length <= 1000:
+                length_weight = 10 + (content_length - 100) * 0.02
+            else:
+                length_weight = 10 + 900 * 0.02 + (content_length - 1000) * 0.005
+            
+            # 综合评分
+            final_score = time_weight + relevance_weight + hierarchy_weight + length_weight
+            
+            return final_score
+        
         sorted_results = sorted(all_results, key=sort_key_text, reverse=True)
         
         combined_results = []
@@ -533,10 +747,14 @@ class Mem0:
 
     def get_full_plan(self, hashkey, task_info):
         task_id = task_info.get("id", "")
-        if not task_id:
-            raise ValueError("Task ID not found in task_info")
         task_goal = task_info.get('goal', '')
         
+        cache_key = f"full_plan_{self.writing_mode}_{self.language}_{hashkey}_{task_id}"
+        cached_result = self.cache_full_plan.get(cache_key)
+        if cached_result is not None:
+            return cached_result
+        
+        # 构建任务ID层级链
         to_task_ids = []
         current_id = task_id
         to_task_ids.append(current_id)
@@ -544,20 +762,138 @@ class Mem0:
             current_id = ".".join(current_id.split(".")[:-1])
             to_task_ids.append(current_id)
         to_task_ids = sorted(to_task_ids, key=lambda x: len(x.split(".")))
-
-        task_goals = []
+        
+        # 构建全面的批量查询，使用多种查询模式提升匹配成功率
+        task_id_patterns = []
         for pid in to_task_ids:
-            results = self.get_client().search(
-                query=f"任务id为{pid}的详细目标(goal)",
-                user_id=f"{self.writing_mode}_{self.language}_{hashkey}_design",
-                limit=1
-            )
-            results = results if isinstance(results, list) else results.get('results', [])
-            if not results:
+            # 基础查询模式
+            task_id_patterns.extend([
+                f"任务id为{pid}",
+                f"id:{pid}",
+                f"[{pid}]",
+                f'"id":"{pid}"',
+                f'"id": "{pid}"',
+                f"任务{pid}",
+                f"task_id:{pid}",
+                f"任务编号{pid}"
+            ])
+        
+        # 智能分批查询策略，避免查询过长同时保证覆盖度
+        all_results = []
+        batch_size = 12  # 增加批次大小
+        
+        for i in range(0, len(task_id_patterns), batch_size):
+            batch_patterns = task_id_patterns[i:i + batch_size]
+            batch_query = " OR ".join(batch_patterns)
+            
+            try:
+                batch_results = self.get_client().search(
+                    query=batch_query,
+                    user_id=f"{self.writing_mode}_{self.language}_{hashkey}_design",
+                    limit=100  # 每批次增加限制数量
+                )
+                
+                batch_results = batch_results if isinstance(batch_results, list) else batch_results.get('results', [])
+                all_results.extend(batch_results)
+                
+            except Exception as e:
+                logger.warning(f"Batch query failed for patterns {i//batch_size + 1}: {e}")
                 continue
-            task_goals.append(f"[{pid}]: {results[0].get('memory')}")
-        logger.info(f"mem0 get_story_content() {self.writing_mode}_{self.language}_{hashkey}\n{task_goal}\n{task_goals}")
-        return "\n".join(task_goals)
+        
+        # 合并所有批次结果，去重
+        seen_memories = set()
+        unique_results = []
+        for result in all_results:
+            memory = result.get('memory', '')
+            if memory and memory not in seen_memories:
+                unique_results.append(result)
+                seen_memories.add(memory)
+        
+        # 解析和匹配任务信息，增强匹配策略
+        task_goals = []
+        found_task_ids = set()
+        
+        # 优先使用批量查询结果，采用多种匹配模式
+        for result in unique_results:
+            memory_content = result.get('memory', '')
+            if not memory_content:
+                continue
+                
+            # 逐个尝试匹配所有任务ID
+            for pid in to_task_ids:
+                if pid in found_task_ids:
+                    continue
+                    
+                # 多种匹配模式，提高匹配成功率
+                memory_lower = memory_content.lower()
+                match_patterns = [
+                    f"任务id为{pid}",
+                    f"id:{pid}",
+                    f"[{pid}]",
+                    f'"id":"{pid}"',
+                    f'"id": "{pid}"',
+                    f"任务{pid}",
+                    f"task_id:{pid}",
+                    f"任务编号{pid}",
+                    f"id={pid}",
+                    f"taskid:{pid}",
+                    f"编号{pid}"
+                ]
+                
+                # 检查是否匹配任何一种模式
+                if any(pattern.lower() in memory_lower for pattern in match_patterns):
+                    task_goals.append(f"[{pid}]: {memory_content}")
+                    found_task_ids.add(pid)
+                    break
+        
+        # 对于批量查询未找到的任务，进行单独查询，使用更多查询词
+        for pid in to_task_ids:
+            if pid not in found_task_ids:
+                # 使用多个查询词增加找到的概率
+                individual_queries = [
+                    f"任务id为{pid}的详细目标(goal)",
+                    f"任务{pid} 目标 详细内容",
+                    f"id:{pid} goal task",
+                    f"[{pid}] 任务计划",
+                    f"任务编号{pid}对应的内容"
+                ]
+                
+                for query in individual_queries:
+                    try:
+                        individual_results = self.get_client().search(
+                            query=query,
+                            user_id=f"{self.writing_mode}_{self.language}_{hashkey}_design",
+                            limit=3  # 每个查询返回多个结果
+                        )
+                        individual_results = individual_results if isinstance(individual_results, list) else individual_results.get('results', [])
+                        
+                        # 检查结果中是否包含目标任务ID
+                        for result in individual_results:
+                            memory = result.get('memory', '')
+                            if memory and pid in memory:
+                                task_goals.append(f"[{pid}]: {memory}")
+                                found_task_ids.add(pid)
+                                break
+                        
+                        if pid in found_task_ids:
+                            break
+                            
+                    except Exception as e:
+                        logger.warning(f"Individual query failed for task {pid} with query '{query}': {e}")
+                        continue
+        
+        # 按任务ID层级排序
+        def sort_key(item):
+            task_id_match = item.split("]: ")[0].replace("[", "")
+            return len(task_id_match.split("."))
+        
+        task_goals.sort(key=sort_key)
+        result = "\n".join(task_goals)
+        
+        self.cache_full_plan.set(cache_key, result)
+        
+        logger.info(f"mem0 get_full_plan_optimized() {self.writing_mode}_{self.language}_{hashkey}\n{task_goal}\n{task_goals}")
+        return result
 
 
 ###############################################################################
