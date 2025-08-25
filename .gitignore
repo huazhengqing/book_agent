@@ -31,6 +31,7 @@ recursive/.cache/
 *.pyc
 *.log
 *.md
+test_*.py
 
 output.jsonl
 done.txt
