@@ -5,8 +5,6 @@ from recursive.llm.litellm_proxy import llm_client
 import json
 from mem0 import Memory as Mem0Memory
 from datetime import datetime
-from recursive.utils.keyword_extractor_zh import keyword_extractor_zh
-from recursive.utils.keyword_extractor_en import keyword_extractor_en
 from recursive.agent.prompts.story_zh.mem import (
     mem_story_fact_zh,
     mem_story_update_zh,
@@ -14,6 +12,14 @@ from recursive.agent.prompts.story_zh.mem import (
     mem_story_design_queries_zh_user,
     mem_story_text_queries_zh_system,
     mem_story_text_queries_zh_user
+)
+from recursive.agent.prompts.report_zh.mem import (
+    mem_report_fact_zh,
+    mem_report_update_zh,
+    mem_report_design_queries_zh_system,
+    mem_report_design_queries_zh_user,
+    mem_report_text_queries_zh_system,
+    mem_report_text_queries_zh_user
 )
 import diskcache
 import hashlib
@@ -62,13 +68,11 @@ from datetime import datetime
 
 """
 
-
 class Mem0:
     def __init__(self, writing_mode, language):
         # 确定写作模式（story, book, report）
         self.writing_mode = writing_mode
         self.language = language
-        self.keyword_extractor = None 
         self.mem0_config = {
             # "vector_store": {
             #     "provider": "chroma",
@@ -145,89 +149,73 @@ class Mem0:
             },
             # "history_db_path": "./.mem0/history.db"
         }
-        if self.writing_mode == "story":
-            self.mem0_config["custom_fact_extraction_prompt"] = mem_story_fact_zh
-            self.mem0_config["custom_update_memory_prompt"] = mem_story_update_zh
-        elif self.writing_mode == "book":
-            self.mem0_config["custom_fact_extraction_prompt"] = "" # TODO: Add book-specific fact extraction prompt
-            self.mem0_config["custom_update_memory_prompt"] = "" # TODO: Add book-specific memory update prompt
-        elif self.writing_mode == "report":
-            self.mem0_config["custom_fact_extraction_prompt"] = "" # TODO: Add report-specific fact extraction prompt
-            self.mem0_config["custom_update_memory_prompt"] = "" # TODO: Add report-specific memory update prompt
-        else:
-            raise ValueError(f"writing_mode={self.writing_mode} not supported")
+        prompt_config = {
+            "story": (mem_story_fact_zh, mem_story_update_zh),
+            "book": ("", ""), 
+            "report": (mem_report_fact_zh, mem_report_update_zh) 
+        }
+        
+        if self.writing_mode not in prompt_config:
+            raise ValueError(f"不支持的写作模式: {self.writing_mode}")
+        
+        fact_prompt, update_prompt = prompt_config[self.writing_mode]
+        if fact_prompt:
+            self.mem0_config["custom_fact_extraction_prompt"] = fact_prompt
+            self.mem0_config["custom_update_memory_prompt"] = update_prompt
 
-        self.client = None
+        # temp = os.getenv("OPENROUTER_API_KEY")
+        # if self.mem0_config["llm"]["provider"] == "openai":
+        #     # os.environ["OPENROUTER_API_KEY"] = ""
+        #     if os.environ.get("OPENROUTER_API_KEY"):
+        #         self.mem0_config["llm"]["config"].update({
+        #             "model": "deepseek/deepseek-chat-v3-0324:free"
+        #         })
+        #     else:
+        #         self.mem0_config["llm"]["config"].update({
+        #             "model": "deepseek-ai/DeepSeek-V3"
+        #         })
+        self.client = Mem0Memory.from_config(config_dict=self.mem0_config)
+        # os.environ["OPENROUTER_API_KEY"] = temp
 
+        self._init_caches()
+        
+    def _init_caches(self):
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__)))
-        cache_dir = os.path.join(project_root, ".cache", "mem0_text")
-        os.makedirs(cache_dir, exist_ok=True)
-        self.cache_text = diskcache.Cache(cache_dir, size_limit=1024 * 1024 * 300)
-
-        cache_dir = os.path.join(project_root, ".cache", "mem0_design")
-        os.makedirs(cache_dir, exist_ok=True)
-        self.cache_design = diskcache.Cache(cache_dir, size_limit=1024 * 1024 * 300)
-        
-        cache_dir = os.path.join(project_root, ".cache", "mem0_full_plan")
-        os.makedirs(cache_dir, exist_ok=True)
-        self.cache_full_plan = diskcache.Cache(cache_dir, size_limit=1024 * 1024 * 100)
-        
-    def get_client(self):
-        if not self.client:
-            # temp = os.getenv("OPENROUTER_API_KEY")
-            # if self.mem0_config["llm"]["provider"] == "openai":
-            #     # os.environ["OPENROUTER_API_KEY"] = ""
-            #     if os.environ.get("OPENROUTER_API_KEY"):
-            #         self.mem0_config["llm"]["config"].update({
-            #             "model": "deepseek/deepseek-chat-v3-0324:free"
-            #         })
-            #     else:
-            #         self.mem0_config["llm"]["config"].update({
-            #             "model": "deepseek-ai/DeepSeek-V3"
-            #         })
-            self.client = Mem0Memory.from_config(config_dict=self.mem0_config)
-            # os.environ["OPENROUTER_API_KEY"] = temp
-        return self.client
-
-    def get_keyword_extractor(self):
-        if not self.keyword_extractor:
-            if self.language == "zh":
-                self.keyword_extractor = keyword_extractor_zh
-            elif self.language == "en":
-                self.keyword_extractor = keyword_extractor_en
-            else:
-                raise ValueError(f"Unsupported language: {self.language}")
-        return self.keyword_extractor
+        cache_configs = {
+            'cache_text': ('mem0_text', 300),
+            'cache_design': ('mem0_design', 300), 
+            'cache_full_plan': ('mem0_full_plan', 100)
+        }
+        for cache_name, (subdir, size_mb) in cache_configs.items():
+            cache_dir = os.path.join(project_root, ".cache", subdir)
+            os.makedirs(cache_dir, exist_ok=True)
+            setattr(self, cache_name, diskcache.Cache(cache_dir, size_limit=1024 * 1024 * size_mb))
 
     def add(self, hashkey, content, content_type, task_info):
         task_id = task_info.get("id")
         if not task_id or task_id == "" or task_id == "0":
-            raise ValueError("Task ID not found in task_info {task_id} \n task_info: {task_info}")
-        task_type = task_info.get("task_type")
-        task_goal = task_info.get("goal")
+            raise ValueError(f"任务信息中未找到任务ID {task_id} \n 任务信息: {task_info}")
+        
         dependency = task_info.get("dependency", [])
         task_str = json.dumps(task_info, ensure_ascii=False)
         dependency_str = json.dumps(dependency, ensure_ascii=False)
-        logger.info(f"mem0 add() {task_info}")
+        logger.info(f"mem0 添加记忆 {task_info}")
 
-        if content_type == "text_content":
-            category = "text"
-        elif content_type in ["task_update", "task_decomposition", "design_result"]:
-            category = "design"
-
-        mem0_content = ""
-        if content_type == "text_content":
-            mem0_content = content
-            self.cache_text.clear()
-        elif content_type == "task_decomposition":
-            mem0_content = f"""任务：\n{task_str}\n规划分解结果：\n{content}"""
-            self.cache_full_plan.clear()
-        elif content_type == "design_result":
-            mem0_content = f"""任务：\n{task_str}\n设计结果：\n{content}"""
-            self.cache_design.clear()
-        elif content_type == "task_update":
-            mem0_content = f"""任务更新：\n{content}"""
-            self.cache_full_plan.clear()
+        # 内容类型配置：{content_type: (category, format_template, cache_to_clear)}
+        content_configs = {
+            "text_content": ("text", lambda c, ts: c, "cache_text"),
+            "task_decomposition": ("design", lambda c, ts: f"任务：\n{ts}\n规划分解结果：\n{c}", "cache_full_plan"),
+            "design_result": ("design", lambda c, ts: f"任务：\n{ts}\n设计结果：\n{c}", "cache_design"),
+            "task_update": ("design", lambda c, ts: f"任务更新：\n{c}", "cache_full_plan"),
+            "search_result": ("search", lambda c, ts: f"任务：\n{ts}\n搜索结果：\n{c}", "cache_design"),
+        }
+        
+        if content_type not in content_configs:
+            raise ValueError(f"不支持的内容类型: {content_type}")
+        
+        category, format_func, cache_attr = content_configs[content_type]
+        mem0_content = format_func(content, task_str)
+        getattr(self, cache_attr).clear()  # 清理对应缓存
 
         parent_task_id = ".".join(task_id.split(".")[:-1]) if task_id and "." in task_id else ""
         mem_metadata = {
@@ -238,525 +226,182 @@ class Mem0:
             "hierarchy_level": len(task_id.split(".")),
             "parent_task_id": parent_task_id,
             "dependency": dependency_str,
-            # "content_length": len(mem0_content),
-            # "content_hash": hashlib.md5(mem0_content.encode('utf-8')).hexdigest()
         }
         
-        logger.info(f"mem0 add() {self.writing_mode}_{self.language}_{hashkey}_{category}\n{mem0_content}\n{mem_metadata}")
-        self.get_client().add(
+        logger.info(f"mem0 添加记忆 {self.writing_mode}_{self.language}_{hashkey}_{category}\n{mem0_content}\n{mem_metadata}")
+        self.client.add(
             mem0_content,
             user_id=f"{self.writing_mode}_{self.language}_{hashkey}_{category}",
             metadata=mem_metadata
         )
 
-    def search(self, hashkey, querys, category, limit=1, filters=None):
+    def search(self, hashkey, querys, category, limit=30, filters=None):
         if not querys:
             return []
         
+        # 去重并过滤空查询
         unique_queries = list(dict.fromkeys([q.strip() for q in querys if q and q.strip()]))
         if not unique_queries:
             return []
         
         user_id = f"{self.writing_mode}_{self.language}_{hashkey}_{category}"
         
-        if len(unique_queries) == 1:
-            query = unique_queries[0]
-        elif len(unique_queries) <= 8:
-            query = " OR ".join([f"({q})" for q in unique_queries])
-        elif len(unique_queries) <= 15:
-            primary_queries = unique_queries[:8]
-            secondary_queries = unique_queries[8:15]
-            primary_part = " OR ".join([f"({q})" for q in primary_queries])
-            secondary_part = " ".join(secondary_queries)
-            query = f"({primary_part}) {secondary_part}"
-            logger.info(f"Using hybrid strategy: {len(primary_queries)} OR queries + {len(secondary_queries)} AND queries")
-        else:
-            core_queries = unique_queries[:6]
-            important_queries = unique_queries[6:12]
-            supplement_queries = unique_queries[12:20]
-            
-            core_part = " OR ".join([f"({q})" for q in core_queries])
-            important_part = " ".join(important_queries) if important_queries else ""
-            supplement_part = " ".join(supplement_queries) if supplement_queries else ""
-            
-            query_parts = [f"({core_part})"]
-            if important_part:
-                query_parts.append(important_part)
-            if supplement_part:
-                query_parts.append(supplement_part)
-            
-            query = " ".join(query_parts)
-            logger.info(f"Using layered strategy: {len(core_queries)} core + {len(important_queries)} important + {len(supplement_queries)} supplement queries")
-
-            if len(unique_queries) > 20:
-                logger.info(f"Truncated {len(unique_queries) - 20} queries to maintain performance")
+        # 使用 OR 连接所有独立查询，以最大化召回可能相关的文档。
+        # 检索的精确性更多地依赖于后续的重排序步骤，而不是复杂的布尔查询。
+        query = " OR ".join([f"({q})" for q in unique_queries])
         
-        logger.info(f"mem0 search() {user_id}\nOptimized query: {query[:200]}...\nTotal keywords: {len(unique_queries)}\nLimit: {limit}\nFilters: {filters}")
+        logger.info(f"mem0 搜索记忆 {user_id}\n查询: {query[:200]}...\n查询数: {len(unique_queries)}\n限制: {limit}\n过滤器: {filters}")
         
-        try:
-            results = self.get_client().search(
-                query=query,
-                user_id=user_id,
-                limit=limit,
-                filters=filters
-            )
-            
-            if isinstance(results, dict):
-                final_results = results.get('results', [])
-            elif isinstance(results, list):
-                final_results = results
-            else:
-                final_results = []
-            
-            final_results = self._apply_hybrid_ranking(final_results, unique_queries, category)
-            
-            logger.info(f"mem0 search() completed: {len(final_results)} results for {len(unique_queries)} queries")
-            return final_results
-            
-        except Exception as e:
-            logger.error(f"Optimized search failed: {e}")
-            logger.info("Falling back to batch retrieval strategy")
-            
-            try:
-                all_fallback_results = []
-                batch_size = 8
-                for i in range(0, min(len(unique_queries), 16), batch_size):
-                    batch_queries = unique_queries[i:i + batch_size]
-                    batch_query = " OR ".join([f"({q})" for q in batch_queries])
-                    
-                    batch_results = self.get_client().search(
-                        query=batch_query,
-                        user_id=user_id,
-                        limit=max(limit // 2, 50), 
-                        filters=filters
-                    )
-                    
-                    if isinstance(batch_results, dict):
-                        batch_final = batch_results.get('results', [])
-                    elif isinstance(batch_results, list):
-                        batch_final = batch_results
-                    else:
-                        batch_final = []
-                    
-                    all_fallback_results.extend(batch_final)
-                
-                seen_memories = set()
-                unique_results = []
-                for result in all_fallback_results:
-                    memory = result.get('memory', '')
-                    if memory and memory not in seen_memories:
-                        unique_results.append(result)
-                        seen_memories.add(memory)
-                
-                unique_results = self._apply_hybrid_ranking(unique_results, unique_queries, category)
-                final_fallback_results = unique_results[:limit]
-                
-                logger.info(f"Batch fallback search completed: {len(final_fallback_results)} results from {len(unique_queries)} queries")
-                return final_fallback_results
-                
-            except Exception as e2:
-                logger.error(f"Batch fallback search also failed: {e2}")
-                try:
-                    simple_query = " ".join(unique_queries[:5])
-                    logger.info(f"Final fallback to simple query: {simple_query}")
-                    
-                    simple_results = self.get_client().search(
-                        query=simple_query,
-                        user_id=user_id,
-                        limit=limit,
-                        filters=filters
-                    )
-                    
-                    if isinstance(simple_results, dict):
-                        return simple_results.get('results', [])
-                    elif isinstance(simple_results, list):
-                        return simple_results
-                    else:
-                        return []
-                        
-                except Exception as e3:
-                    logger.error(f"All search strategies failed: {e3}")
-                    return []
+        results = self.client.search(
+            query=query,
+            user_id=user_id,
+            limit=limit,
+            filters=filters
+        )
+        logger.info(f"mem0 搜索完成: {len(unique_queries)} 个查询返回 {results}")
+        return results
     
-    def _apply_hybrid_ranking(self, results, query_terms, category):
-        if not results or not query_terms:
-            return results
-        
-        try:
-            enhanced_results = []
-            for result in results:
-                memory = result.get('memory', '').lower()
-                original_score = result.get('score', 0.0)
-                
-                # 计算关键词匹配分数
-                keyword_match_score = 0
-                for term in query_terms:
-                    if term.lower() in memory:
-                        # 精确匹配加分更多
-                        keyword_match_score += 2.0
-                    else:
-                        # 部分匹配检查
-                        term_chars = set(term.lower())
-                        memory_chars = set(memory)
-                        overlap = len(term_chars & memory_chars) / len(term_chars) if term_chars else 0
-                        if overlap > 0.5:  # 50%以上字符重叠
-                            keyword_match_score += overlap
-                
-                # 计算内容质量分数
-                content_quality_score = 0
-                metadata = result.get('metadata', {})
-                content_length = len(memory)
-                
-                # 内容长度评分
-                if 50 <= content_length <= 1000:
-                    content_quality_score += 1.0
-                elif content_length > 1000:
-                    content_quality_score += 0.8
-                else:
-                    content_quality_score += 0.5
-                
-                # 時間新鲜度评分
-                if 'timestamp' in metadata:
-                    try:
-                        timestamp = datetime.fromisoformat(metadata['timestamp'])
-                        time_diff = (datetime.now() - timestamp).total_seconds()
-                        if time_diff <= 3600:  # 1小时内
-                            content_quality_score += 1.5
-                        elif time_diff <= 86400:  # 1天内
-                            content_quality_score += 1.0
-                        elif time_diff <= 604800:  # 1周内
-                            content_quality_score += 0.5
-                    except:
-                        pass
-                
-                # 类别特定评分
-                category_score = 0
-                if category == "design":
-                    # 设计类内容优先考虑层级和结构化程度
-                    if 'hierarchy_level' in metadata:
-                        category_score += metadata.get('hierarchy_level', 0) * 0.1
-                    if any(marker in memory for marker in ['###', '|', '```', '-']):
-                        category_score += 0.5  # 结构化内容加分
-                elif category == "text":
-                    # 文本类内容优先考虑连贯性和完整性
-                    if any(marker in memory for marker in ['。', '！', '？', '\n']):
-                        category_score += 0.3  # 完整句子加分
-                
-                # 综合评分计算
-                final_score = (
-                    original_score * 0.4 +  # 原始语义相似度权重
-                    keyword_match_score * 0.35 +  # 关键词匹配权重
-                    content_quality_score * 0.15 +  # 内容质量权重
-                    category_score * 0.1  # 类别特定权重
-                )
-                
-                enhanced_result = result.copy()
-                enhanced_result['hybrid_score'] = final_score
-                enhanced_result['keyword_match_score'] = keyword_match_score
-                enhanced_result['content_quality_score'] = content_quality_score
-                enhanced_results.append(enhanced_result)
-            
-            enhanced_results.sort(key=lambda x: x.get('hybrid_score', 0), reverse=True)
-            
-            logger.info(f"Applied hybrid ranking to {len(results)} results, top score: {enhanced_results[0].get('hybrid_score', 0):.3f}" if enhanced_results else "No results to rank")
-            return enhanced_results
-            
-        except Exception as e:
-            logger.warning(f"Hybrid ranking failed: {e}, falling back to original order")
-            return results
-        
+
     def get_outer_graph_dependent(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
+        task_id = task_info.get("id")
+        if not task_id or task_id == "" or task_id == "0":
+            raise ValueError(f"任务信息中未找到任务ID {task_id} \n 任务信息: {task_info}")
+
+        cur_hierarchy_level = len(task_id.split(".")) if task_id else 1
+        if cur_hierarchy_level <= 2:
+            return ""
+        
         s = f"{hashkey}\n{task_info}\n{same_graph_dependent_designs}\n{latest_content}"
         cache_key = hashlib.blake2b(s.encode('utf-8'), digest_size=32).hexdigest()
         cached_result = self.cache_design.get(cache_key)
         if cached_result is not None:
             return cached_result
 
-        ret = ""
-        if self.writing_mode == "story":
-            ret = self.get_story_outer_graph_dependent(hashkey, task_info, same_graph_dependent_designs, latest_content)
-        elif self.writing_mode == "book":
-            ret = ""
-        elif self.writing_mode == "report":
-            ret = ""
-        else:
-            raise ValueError(f"writing_mode={self.writing_mode} not supported")
+        # 写作模式方法映射
+        method_map = {
+            "story": lambda: self.get_story_outer_graph_dependent(hashkey, task_info, same_graph_dependent_designs, latest_content),
+            "book": lambda: "",
+            "report": lambda: ""
+        }
+        
+        if self.writing_mode not in method_map:
+            raise ValueError(f"不支持的写作模式: {self.writing_mode}")
+        
+        ret = method_map[self.writing_mode]()
         self.cache_design.set(cache_key, ret)
         return ret
 
     def get_content(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
+        task_id = task_info.get("id")
+        if not task_id or task_id == "" or task_id == "0":
+            raise ValueError(f"任务信息中未找到任务ID {task_id} \n 任务信息: {task_info}")
+
+        if not latest_content.strip() or latest_content.strip() == "" or  len(latest_content) < 500:
+            return ""
+
         s = f"{hashkey}\n{task_info}\n{same_graph_dependent_designs}\n{latest_content}"
         cache_key = hashlib.blake2b(s.encode('utf-8'), digest_size=32).hexdigest()
         cached_result = self.cache_text.get(cache_key)
         if cached_result is not None:
             return cached_result
 
-        ret = ""
-        if self.writing_mode == "story":
-            ret = self.get_story_content(hashkey, task_info, same_graph_dependent_designs, latest_content)
-        elif self.writing_mode == "book":
-            ret = ""
-        elif self.writing_mode == "report":
-            ret = ""
-        else:
-            raise ValueError(f"writing_mode={self.writing_mode} not supported")
+        # 写作模式方法映射
+        method_map = {
+            "story": lambda: self.get_story_content(hashkey, task_info, same_graph_dependent_designs, latest_content),
+            "book": lambda: "",
+            "report": lambda: ""
+        }
+        
+        if self.writing_mode not in method_map:
+            raise ValueError(f"不支持的写作模式: {self.writing_mode}")
+        
+        ret = method_map[self.writing_mode]()
         self.cache_text.set(cache_key, ret)
         return ret
 
     def _generate_queries(self, category, task_info, context_str):
         """
         使用轻量级LLM根据任务和上下文动态生成用于检索"设计库"、"小说正文"的搜索查询词。
-        
-        Args:
-            category: "design" 或 "text"
-            task_info: 完整的任务信息JSON，包括id、goal、task_type等所有字段
-            context_str: 上下文信息
         """
-        prompt_system = ""
-        prompt_user = ""
-        if category == "design":
-            if self.writing_mode == "story":
-                if self.language == "zh":
-                    prompt_system = mem_story_design_queries_zh_system
-                    prompt_user = mem_story_design_queries_zh_user.format(
-                        task_info=json.dumps(task_info, ensure_ascii=False, indent=2),
-                        context_str=context_str
-                    )
-                elif self.language == "en":
-                    prompt_system = ""
-                    prompt_user = ""
-                else:
-                    raise ValueError(f"Unsupported language: {self.language}")
-            elif self.writing_mode == "book":
-                if self.language == "zh":
-                    prompt_system = ""
-                    prompt_user = ""
-                elif self.language == "en":
-                    prompt_system = ""
-                    prompt_user = ""
-                else:
-                    raise ValueError(f"Unsupported language: {self.language}")
-            elif self.writing_mode == "report":
-                if self.language == "zh":
-                    prompt_system = ""
-                    prompt_user = ""
-                elif self.language == "en":
-                    prompt_system = ""
-                    prompt_user = ""
-                else:
-                    raise ValueError(f"Unsupported language: {self.language}")
-            else:
-                raise ValueError(f"writing_mode={self.writing_mode} not supported")
-        elif category == "text":
-            if self.writing_mode == "story":
-                if self.language == "zh":
-                    prompt_system = mem_story_text_queries_zh_system
-                    prompt_user = mem_story_text_queries_zh_user.format(
-                        task_info=json.dumps(task_info, ensure_ascii=False, indent=2),
-                        context_str=context_str
-                    )
-                elif self.language == "en":
-                    prompt_system = ""
-                    prompt_user = ""
-                else:
-                    raise ValueError(f"Unsupported language: {self.language}")
-            elif self.writing_mode == "book":
-                if self.language == "zh":
-                    prompt_system = ""
-                    prompt_user = ""
-                elif self.language == "en":
-                    prompt_system = ""
-                    prompt_user = ""
-                else:
-                    raise ValueError(f"Unsupported language: {self.language}")
-            elif self.writing_mode == "report":
-                if self.language == "zh":
-                    prompt_system = ""
-                    prompt_user = ""
-                elif self.language == "en":
-                    prompt_system = ""
-                    prompt_user = ""
-                else:
-                    raise ValueError(f"Unsupported language: {self.language}")
-            else:
-                raise ValueError(f"writing_mode={self.writing_mode} not supported")
-        else:
-            raise ValueError(f"category={category} not supported")
+        if category not in ["design", "text"]:
+            raise ValueError(f"不支持的类别: {category}")
         
-        logger.info(f"mem0 _generate_queries() {self.writing_mode}_{self.language}_{category}\ntask_info: {task_info}")
-        response = None
-        if self.language == "zh":
-            response = llm_client.call_fast_zh(
-                messages=[{"role": "system", "content": prompt_system}, {"role": "user", "content": prompt_user}],
-                temperature=0.2,
-            )
-        elif self.language == "en":
-            response = llm_client.call_fast_en(
-                messages=[{"role": "system", "content": prompt_system}, {"role": "user", "content": prompt_user}],
-                temperature=0.2,
-            )
-        else:
-            raise ValueError(f"Unsupported language: {self.language}")
-        if response == None:
-            raise ValueError("LLM response is None")
-        content = response[0].message.content
-        logger.info(f"mem0 _generate_queries() {self.writing_mode}_{self.language}_{category}\nresponse: {content}")
-        try:
-            queries = json.loads(content)
-            if isinstance(queries, list):
-                logger.info(f"mem0 _generate_queries() {self.writing_mode}_{self.language}_{category}\nqueries: {queries}")
-                return queries
-        except json.JSONDecodeError:
-            logger.error(f"Failed to decode JSON from LLM for {category} queries. Content: {content}")
-        return []
+        # 配置映射：{(category, writing_mode, language): (prompt_system, prompt_user_template)}
+        prompt_config = {
+            ("design", "story", "zh"): (mem_story_design_queries_zh_system, mem_story_design_queries_zh_user),
+            ("text", "story", "zh"): (mem_story_text_queries_zh_system, mem_story_text_queries_zh_user),
+            ("design", "report", "zh"): (mem_report_design_queries_zh_system, mem_report_design_queries_zh_user),
+            ("text", "report", "zh"): (mem_report_text_queries_zh_system, mem_report_text_queries_zh_user),
+        }
+        config_key = (category, self.writing_mode, self.language)
+        if config_key not in prompt_config:
+            raise ValueError(f"未配置提示词: {config_key}")
+        
+        prompt_system, prompt_user_template = prompt_config[config_key]
+        prompt_user = prompt_user_template.format(
+            task_info=json.dumps(task_info, ensure_ascii=False, indent=2),
+            context_str=context_str
+        )
 
-    def _optimize_queries(self, queries):
-        """
-        查询质量优化：去重、过滤、相似度去重
-        提升检索效率，避免冗余查询
-        """
-        if not queries:
-            return []
+        llm_call_func = {
+            "zh": llm_client.call_fast_zh,
+            "en": llm_client.call_fast_en
+        }.get(self.language)
+        if not llm_call_func:
+            raise ValueError(f"不支持的语言: {self.language}")
         
-        # 1. 基础去重和清理
-        unique_queries = []
-        seen = set()
-        for query in queries:
-            if not query or not isinstance(query, str):
-                continue
-            
-            cleaned = query.strip()
-            if not cleaned or len(cleaned) < 2:
-                continue
-            
-            if cleaned not in seen:
-                unique_queries.append(cleaned)
-                seen.add(cleaned)
+        response = llm_call_func(
+            messages=[{"role": "system", "content": prompt_system}, {"role": "user", "content": prompt_user}],
+            temperature=0.2,
+        )
+        if response is None:
+            raise ValueError("LLM响应为空")
         
-        # 2. 长度过滤 - 过长或过短的查询通常质量不高
-        length_filtered = [
-            q for q in unique_queries 
-            if 2 <= len(q) <= 30  # 适合中文的长度范围
-        ]
+        content = response[0].message.content
+        logger.info(f"mem0 生成查询 {self.writing_mode}_{self.language}_{category}\n响应: {content}")
         
-        # 3. 相似度去重 - 移除过于相似的查询
-        final_queries = []
-        for query in length_filtered:
-            is_similar = False
-            for existing in final_queries:
-                # 简单的字符重叠相似度检测
-                query_chars = set(query)
-                existing_chars = set(existing)
-                overlap_ratio = len(query_chars & existing_chars) / len(query_chars | existing_chars)
-                
-                # 如果重叠度过高，跳过这个查询
-                if overlap_ratio > 0.7:
-                    is_similar = True
-                    break
-            
-            if not is_similar:
-                final_queries.append(query)
+        queries = json.loads(content)
+        if not isinstance(queries, list):
+            raise ValueError(f"无效的查询: {queries}")
         
-        # 4. 查询数量控制 - 避免过多查询影响性能
-        if len(final_queries) > 20:
-            # 保留任务目标查询，其他按长度和复杂度排序
-            task_queries = [q for q in final_queries if any(keyword in q for keyword in ["目标", "任务", "写", "创作"])]
-            other_queries = [q for q in final_queries if q not in task_queries]
-            
-            # 按查询复杂度排序（包含更多关键词的查询优先）
-            other_queries.sort(key=lambda x: len(x.split()), reverse=True)
-            final_queries = task_queries + other_queries[:20-len(task_queries)]
-        
-        return final_queries
+        return queries
 
     def get_story_outer_graph_dependent(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
         """
         检索设计结果
         替换 agent/agents/regular.py 中的 get_llm_output 中的 to_run_outer_graph_dependent
-        
-        优化后的检索词生成策略：
-        1. LLM智能查询生成 - 基于任务和上下文的语义化查询
-        2. 条件性关键词补充 - 仅在LLM查询不足时使用传统关键词提取
-        3. 任务类型特定查询 - 针对写作任务的叙事风格查询增强
-        4. 查询质量过滤 - 去重、长度过滤、相似度去重
         """
-        task_id = task_info.get('id', '')
-        if not task_id:
-            raise ValueError("Task ID not found in task_info")
-        
-        # 1. LLM智能查询生成（主要策略）
         llm_queries = self._generate_queries(
             category="design",
             task_info=task_info,
             context_str=f"相关设计:\n{same_graph_dependent_designs}\n\n最新内容:\n{latest_content}"
         )
         
-        # 2. 核心查询保证 - 使用任务目标作为基础查询
-        task_goal = task_info.get('goal', '')
-        all_queries = [task_goal] + llm_queries
-        # 3. 条件性关键词补充（仅在查询数量不足时）
-        if len(all_queries) < 10:  # 提升阈值减少关键词提取调用
-            combined_content = f"{latest_content}\n\n{same_graph_dependent_designs}"
-            if combined_content and len(combined_content.strip()) > 50:
-                # 使用更高效的关键词提取参数
-                keywords = self.get_keyword_extractor().extract_from_markdown(
-                    combined_content, top_k=min(8, 14 - len(all_queries))
-                )
-                all_queries.extend(keywords)
-        # 4. 查询质量优化
-        final_queries = self._optimize_queries(all_queries)
-        
+        task_id = task_info.get('id', '')
         cur_hierarchy_level = len(task_id.split(".")) if task_id else 1
         filters = {
             "content_type": "design_result",
-            "hierarchy_level": {"gte": 1, "lte": cur_hierarchy_level}
+            "hierarchy_level": {"gte": 1, "lt": cur_hierarchy_level}
         }
-        all_results = self.search(hashkey, final_queries, "design", limit=500, filters=filters)
+        all_results = self.search(hashkey, llm_queries, "design", limit=500, filters=filters)
         
-        # 优化的多维度排序策略，提升检索结果质量
+        # 简化的排序策略：主要基于相关性和时间新鲜度
         def sort_key_design(x):
             meta = x.get('metadata', {})
+            base_score = x.get('score', 0.0)  # mem0向量检索的相关性分数
             
-            # 解析时间戳
+            # 解析时间戳 - 时间新鲜度很重要
             ts_str = meta.get('timestamp', '')
             try:
                 timestamp = datetime.fromisoformat(ts_str) if ts_str else datetime.min
+                time_diff_hours = (datetime.now() - timestamp).total_seconds() / 3600
+                # 时间衰减：越新的内容越重要，但不要过度复杂化
+                time_factor = max(0.1, 1.0 - time_diff_hours / (24 * 7))  # 一周内线性衰减
             except (ValueError, TypeError):
-                timestamp = datetime.min
+                time_factor = 0.1
             
-            # 多维度评分系统
-            hierarchy_level = meta.get('hierarchy_level', 0)
-            base_score = x.get('score', 0.0)
-            content_length = meta.get('content_length', 0)
-            
-            # 层级权重：越高层级越重要
-            hierarchy_weight = hierarchy_level * 100
-            
-            # 相关性权重：基础分数 * 50
-            relevance_weight = base_score * 50
-            
-            # 内容丰富度权重：适中长度最优
-            if content_length < 50:
-                length_weight = content_length * 0.1  # 过短内容降权
-            elif content_length <= 500:
-                length_weight = content_length * 0.3  # 适中内容加权
-            else:
-                length_weight = 500 * 0.3 + (content_length - 500) * 0.1  # 过长内容稍微降权
-            
-            # 时间新鲜度权重：较新的内容加分
-            time_diff_days = (datetime.now() - timestamp).days
-            if time_diff_days <= 1:
-                time_weight = 20  # 最新内容
-            elif time_diff_days <= 7:
-                time_weight = 15  # 近期内容
-            elif time_diff_days <= 30:
-                time_weight = 10  # 中期内容
-            else:
-                time_weight = 5   # 早期内容
-            
-            # 综合评分
-            final_score = hierarchy_weight + relevance_weight + length_weight + time_weight
-            
+            # 简化的综合评分：相关性为主，时间为辅
+            final_score = base_score * (0.8 + 0.2 * time_factor)
             return final_score
         
         sorted_results = sorted(all_results, key=sort_key_design, reverse=True)
@@ -768,100 +413,37 @@ class Mem0:
             if memory_content and memory_content not in seen_contents:
                 combined_results.append(memory_content)
                 seen_contents.add(memory_content)
-        logger.info(f"mem0 get_story_outer_graph_dependent() {self.writing_mode}_{self.language}_{hashkey}\n{task_goal}\n{combined_results}")
+        logger.info(f"mem0 获取故事外部图依赖 {self.writing_mode}_{self.language}_{hashkey}\n{task_info}\n{combined_results}")
         return "\n\n".join(combined_results)
 
     def get_story_content(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
         """
         检索小说已经写的正文内容
         替换 agent/agents/regular.py 中的 get_llm_output 中的 memory.article
-        
-        优化后的检索策略：与设计检索类似，但侧重正文内容的连续性
         """
-        task_id = task_info.get('id', '') 
-        if not task_id:
-            raise ValueError("Task ID not found in task_info")
-        
-        # 1. LLM智能查询生成（主要策略）
         llm_queries = self._generate_queries(
             category="text",
             task_info=task_info,
             context_str=f"最新正文内容:\n{latest_content}\n\n相关设计:\n{same_graph_dependent_designs}"
         )
-
-        # 2. 核心查询保证 - 使用任务目标作为基础查询
-        task_goal = task_info.get('goal', '')
-        all_queries = [task_goal] + llm_queries
-
-        # 3. 条件性关键词补充（仅在查询数量不足时）
-        if len(all_queries) < 8:  # 提升阈值专注文本连续性
-            combined_content = f"{latest_content}\n\n{same_graph_dependent_designs}"
-            if combined_content and len(combined_content.strip()) > 50:
-                keywords = self.get_keyword_extractor().extract_from_markdown(
-                    combined_content, top_k=min(6, 12 - len(all_queries))
-                )
-                all_queries.extend(keywords)
-
-        # 4. 查询质量优化
-        final_queries = self._optimize_queries(all_queries)
+        all_results = self.search(hashkey, llm_queries, "text", limit=500)
         
-        all_results = self.search(hashkey, final_queries, "text", limit=500)
-        
-        # 优化的文本内容排序策略，优先时间新鲜度和相关性
+        # 简化的文本排序策略：时间优先，相关性为辅
         def sort_key_text(x):
             meta = x.get('metadata', {})
+            base_score = x.get('score', 0.0)
             
-            # 解析时间戳
+            # 时间新鲜度：对于小说内容，时间顺序很重要
             ts_str = meta.get('timestamp', '')
             try:
                 timestamp = datetime.fromisoformat(ts_str) if ts_str else datetime.min
+                # 直接使用时间戳作为主要排序依据，最新的内容排在前面
+                time_score = timestamp.timestamp() 
             except (ValueError, TypeError):
-                timestamp = datetime.min
+                time_score = 0
             
-            # 多维度评分系统
-            base_score = x.get('score', 0.0)
-            hierarchy_level = meta.get('hierarchy_level', 0)
-            content_length = meta.get('content_length', 0)
-            
-            # 时间新鲜度权重：最重要的因素
-            time_diff_seconds = (datetime.now() - timestamp).total_seconds()
-            if time_diff_seconds <= 3600:  # 1小时内
-                time_weight = 200
-            elif time_diff_seconds <= 86400:  # 1天内
-                time_weight = 150
-            elif time_diff_seconds <= 604800:  # 1周内
-                time_weight = 100
-            elif time_diff_seconds <= 2592000:  # 1个月内
-                time_weight = 50
-            else:
-                time_weight = 10
-            
-            # 相关性权重：高相关性内容优先
-            relevance_weight = base_score * 80
-            
-            # 层级权重：与当前任务层级越接近越好
-            task_hierarchy = len(task_id.split(".")) if task_id else 1
-            level_diff = abs(hierarchy_level - task_hierarchy)
-            if level_diff == 0:
-                hierarchy_weight = 30  # 相同层级
-            elif level_diff == 1:
-                hierarchy_weight = 20  # 相邻层级
-            elif level_diff == 2:
-                hierarchy_weight = 10  # 较远层级
-            else:
-                hierarchy_weight = 5   # 很远层级
-            
-            # 内容丰富度权重：中等长度内容更有价值
-            if content_length < 100:
-                length_weight = content_length * 0.1
-            elif content_length <= 1000:
-                length_weight = 10 + (content_length - 100) * 0.02
-            else:
-                length_weight = 10 + 900 * 0.02 + (content_length - 1000) * 0.005
-            
-            # 综合评分
-            final_score = time_weight + relevance_weight + hierarchy_weight + length_weight
-            
+            # 结合相关性分数，但时间权重更高
+            final_score = time_score + base_score * 100  # 时间为主，相关性为辅
             return final_score
         
         sorted_results = sorted(all_results, key=sort_key_text, reverse=True)
@@ -873,278 +455,31 @@ class Mem0:
             if memory_content and memory_content not in seen_contents:
                 combined_results.append(memory_content)
                 seen_contents.add(memory_content)
-        logger.info(f"mem0 get_story_content() {self.writing_mode}_{self.language}_{hashkey}\n{task_goal}\n{combined_results}")
+        logger.info(f"mem0 获取故事内容 {self.writing_mode}_{self.language}_{hashkey}\n{task_info}\n{combined_results}")
         return "\n\n".join(combined_results)
 
     def get_full_plan(self, hashkey, task_info):
-        task_id = task_info.get("id", "")
-        task_goal = task_info.get('goal', '')
-        
-        cache_key = f"full_plan_{self.writing_mode}_{self.language}_{hashkey}_{task_id}"
-        cached_result = self.cache_full_plan.get(cache_key)
-        if cached_result is not None:
-            return cached_result
-        
-        # 尝试使用Cypher查询进行高效路径检索
-        cypher_result = self._get_full_plan_via_cypher(hashkey, task_id)
-        if cypher_result:
-            self.cache_full_plan.set(cache_key, cypher_result)
-            logger.info(f"mem0 get_full_plan_cypher() {self.writing_mode}_{self.language}_{hashkey}\n{task_goal}\n{cypher_result}")
-            return cypher_result
-        
-        # 降级到原有的批量查询策略
-        logger.info("Cypher query failed, falling back to batch search strategy")
-        return self._get_full_plan_fallback(hashkey, task_info)
-    
-    def _get_full_plan_via_cypher(self, hashkey, task_id):
-        """
-        使用Cypher查询直接从Memgraph获取任务层级路径
-        提升查询效率，减少网络往返
-        """
-        try:
-            # 构建任务ID层级链
-            to_task_ids = []
-            current_id = task_id
-            to_task_ids.append(current_id)
-            while "." in current_id:
-                current_id = ".".join(current_id.split(".")[:-1])
-                to_task_ids.append(current_id)
-            to_task_ids = sorted(to_task_ids, key=lambda x: len(x.split(".")))
-            
-            # 通过mem0的图数据库连接执行Cypher查询
-            graph_store = self.get_client().graph_store
-            if not hasattr(graph_store, 'graph'):
-                return None
-                
-            # 构建Cypher查询语句 - 查找包含目标任务ID的所有节点
-            task_goals = []
-            user_id = f"{self.writing_mode}_{self.language}_{hashkey}"
-            
-            for pid in to_task_ids:
-                # 使用Cypher查询查找包含特定任务ID的实体
-                cypher_query = """
-                MATCH (e:Entity)
-                WHERE e.user_id = $user_id 
-                  AND (e.name CONTAINS $task_id OR e.text CONTAINS $task_id)
-                RETURN e.name, e.text
-                LIMIT 5
-                """
-                
-                try:
-                    result = graph_store.graph.run(cypher_query, 
-                                                  user_id=user_id, 
-                                                  task_id=pid)
-                    
-                    for record in result:
-                        name = record.get('e.name', '')
-                        text = record.get('e.text', '')
-                        content = text if text else name
-                        
-                        if content and pid in content:
-                            task_goals.append(f"[{pid}]: {content}")
-                            break
-                            
-                except Exception as e:
-                    logger.warning(f"Cypher query failed for task {pid}: {e}")
-                    continue
-            
-            if task_goals:
-                # 按任务ID层级排序
-                def sort_key(item):
-                    task_id_match = item.split("]: ")[0].replace("[", "")
-                    return len(task_id_match.split("."))
-                
-                task_goals.sort(key=sort_key)
-                return "\n".join(task_goals)
-                
-        except Exception as e:
-            logger.warning(f"Cypher-based full plan query failed: {e}")
-            return None
-        
-        return None
-    
-    def _get_full_plan_fallback(self, hashkey, task_info):
-        """
-        原有的批量查询策略作为降级方案
-        """
-        task_id = task_info.get("id", "")
-        task_goal = task_info.get('goal', '')
-        
-        # 构建任务ID层级链
-        to_task_ids = []
-        current_id = task_id
-        to_task_ids.append(current_id)
-        while "." in current_id:
-            current_id = ".".join(current_id.split(".")[:-1])
-            to_task_ids.append(current_id)
-        to_task_ids = sorted(to_task_ids, key=lambda x: len(x.split(".")))
-        
-        # 构建全面的批量查询，使用多种查询模式提升匹配成功率
-        task_id_patterns = []
-        for pid in to_task_ids:
-            # 基础查询模式
-            task_id_patterns.extend([
-                f"任务id为{pid}",
-                f"id:{pid}",
-                f"[{pid}]",
-                f'"id":"{pid}"',
-                f'"id": "{pid}"',
-                f"任务{pid}",
-                f"task_id:{pid}",
-                f"任务编号{pid}"
-            ])
-        
-        # 智能分批查询策略，避免查询过长同时保证覆盖度
-        all_results = []
-        batch_size = 12  # 增加批次大小
-        
-        for i in range(0, len(task_id_patterns), batch_size):
-            batch_patterns = task_id_patterns[i:i + batch_size]
-            batch_query = " OR ".join(batch_patterns)
-            
-            try:
-                batch_results = self.get_client().search(
-                    query=batch_query,
-                    user_id=f"{self.writing_mode}_{self.language}_{hashkey}_design",
-                    limit=100  # 每批次增加限制数量
-                )
-                
-                batch_results = batch_results if isinstance(batch_results, list) else batch_results.get('results', [])
-                all_results.extend(batch_results)
-                
-            except Exception as e:
-                logger.warning(f"Batch query failed for patterns {i//batch_size + 1}: {e}")
-                continue
-        
-        # 合并所有批次结果，去重
-        seen_memories = set()
-        unique_results = []
-        for result in all_results:
-            memory = result.get('memory', '')
-            if memory and memory not in seen_memories:
-                unique_results.append(result)
-                seen_memories.add(memory)
-        
-        # 解析和匹配任务信息，增强匹配策略
-        task_goals = []
-        found_task_ids = set()
-        
-        # 优先使用批量查询结果，采用多种匹配模式
-        for result in unique_results:
-            memory_content = result.get('memory', '')
-            if not memory_content:
-                continue
-                
-            # 逐个尝试匹配所有任务ID
-            for pid in to_task_ids:
-                if pid in found_task_ids:
-                    continue
-                    
-                # 多种匹配模式，提高匹配成功率
-                memory_lower = memory_content.lower()
-                match_patterns = [
-                    f"任务id为{pid}",
-                    f"id:{pid}",
-                    f"[{pid}]",
-                    f'"id":"{pid}"',
-                    f'"id": "{pid}"',
-                    f"任务{pid}",
-                    f"task_id:{pid}",
-                    f"任务编号{pid}",
-                    f"id={pid}",
-                    f"taskid:{pid}",
-                    f"编号{pid}"
-                ]
-                
-                # 检查是否匹配任何一种模式
-                if any(pattern.lower() in memory_lower for pattern in match_patterns):
-                    task_goals.append(f"[{pid}]: {memory_content}")
-                    found_task_ids.add(pid)
-                    break
-        
-        # 对于批量查询未找到的任务，进行单独查询，使用更多查询词
-        for pid in to_task_ids:
-            if pid not in found_task_ids:
-                # 使用多个查询词增加找到的概率
-                individual_queries = [
-                    f"任务id为{pid}的详细目标(goal)",
-                    f"任务{pid} 目标 详细内容",
-                    f"id:{pid} goal task",
-                    f"[{pid}] 任务计划",
-                    f"任务编号{pid}对应的内容"
-                ]
-                
-                for query in individual_queries:
-                    try:
-                        individual_results = self.get_client().search(
-                            query=query,
-                            user_id=f"{self.writing_mode}_{self.language}_{hashkey}_design",
-                            limit=3  # 每个查询返回多个结果
-                        )
-                        individual_results = individual_results if isinstance(individual_results, list) else individual_results.get('results', [])
-                        
-                        # 检查结果中是否包含目标任务ID
-                        for result in individual_results:
-                            memory = result.get('memory', '')
-                            if memory and pid in memory:
-                                task_goals.append(f"[{pid}]: {memory}")
-                                found_task_ids.add(pid)
-                                break
-                        
-                        if pid in found_task_ids:
-                            break
-                            
-                    except Exception as e:
-                        logger.warning(f"Individual query failed for task {pid} with query '{query}': {e}")
-                        continue
-        
-        # 按任务ID层级排序
-        def sort_key(item):
-            task_id_match = item.split("]: ")[0].replace("[", "")
-            return len(task_id_match.split("."))
-        
-        task_goals.sort(key=sort_key)
-        result = "\n".join(task_goals)
-        
-        cache_key = f"full_plan_{self.writing_mode}_{self.language}_{hashkey}_{task_info.get('id', '')}"
-        self.cache_full_plan.set(cache_key, result)
-        
-        logger.info(f"mem0 get_full_plan_fallback() {self.writing_mode}_{self.language}_{hashkey}\n{task_info.get('goal', '')}\n{task_goals}")
-        return result
-
+        pass
+ 
 
 ###############################################################################
 
 
-mem0_story_zh = Mem0("story", "zh")
-mem0_story_en = Mem0("story", "en")
-mem0_book_zh = Mem0("book", "zh")
-mem0_book_en = Mem0("book", "en")
-mem0_report_zh = Mem0("report", "zh")
-mem0_report_en = Mem0("report", "en")
+_mem0_cache = {}
 
 
 def get_mem0(config):
-    if config["writing_mode"] == "story":
-        if config["language"] == "zh":
-            return mem0_story_zh
-        elif config["language"] == "en":
-            return mem0_story_en
-        else:
-            raise ValueError(f"Unsupported language: {config["language"]}")
-    elif config["writing_mode"] == "book":
-        if config["language"] == "zh":
-            return mem0_book_zh
-        elif config["language"] == "en":
-            return mem0_book_en
-        else:
-            raise ValueError(f"Unsupported language: {config["language"]}")
-    elif config["writing_mode"] == "report":
-        if config["language"] == "zh":
-            return mem0_report_zh
-        elif config["language"] == "en":
-            return mem0_report_en
-        else:
-            raise ValueError(f"Unsupported language: {config["language"]}")
-    else:
-        raise ValueError(f"writing_mode={config["writing_mode"]} not supported")
+    writing_mode = config["writing_mode"]
+    language = config["language"]
+    
+    if writing_mode not in ["story", "book", "report"]:
+        raise ValueError(f"不支持的写作模式: {writing_mode}")
+    
+    if language not in ["zh", "en"]:
+        raise ValueError(f"不支持的语言: {language}")
+    
+    cache_key = f"{writing_mode}_{language}"
+    if cache_key not in _mem0_cache:
+        _mem0_cache[cache_key] = Mem0(writing_mode, language)
+    
+    return _mem0_cache[cache_key]

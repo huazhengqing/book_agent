@@ -318,8 +318,5 @@ class KeywordExtractorEn:
 ###############################################################################
 
 
-keyword_extractor_en = KeywordExtractorEn()
-
-
 
 

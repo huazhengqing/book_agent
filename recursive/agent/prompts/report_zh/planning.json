@@ -1,0 +1,282 @@
+{
+    "id": "1",
+    "task_type": "write",
+    "goal": "生成一份详细的商业传记，记录“深求（DeepSeek）”的崛起之路",
+    "dependency": [
+
+    ],
+    "length": "8600字",
+    "sub_tasks": [
+        {
+            "id": "1.1",
+            "task_type": "search",
+            "goal": "初步收集深求的公司信息，包括：创始团队背景、成立时间、融资历史、产品发展历程、技术突破、市场表现等关键信息，以确定文章整体架构",
+            "dependency": [
+
+            ],
+            "sub_tasks": [
+
+            ]
+        },
+        {
+            "id": "1.2",
+            "task_type": "think",
+            "goal": "分析深求的发展轨迹和成功要素，识别关键的里程碑事件，设计传记的整体结构和重点内容",
+            "dependency": [
+                "1.1"
+            ],
+            "sub_tasks": [
+
+            ]
+        },
+        {
+            "id": "1.3",
+            "task_type": "write",
+            "goal": "根据搜索结果和设计的整体结构、重点内容，撰写传记内容",
+            "length": "8600字",
+            "dependency": [
+                "1.1",
+                "1.2"
+            ],
+            "sub_tasks": [
+                {
+                    "id": "1.3.1",
+                    "task_type": "write",
+                    "goal": "撰写创始人与团队背景章节，重点介绍梁文锋的量化投资经历和团队特点",
+                    "length": "1200字",
+                    "dependency": [
+
+                    ],
+                    "sub_tasks": [
+                        {
+                            "id": "1.3.1.1",
+                            "task_type": "search",
+                            "goal": "收集梁文锋在幻方量化（Ubiquant）的详细经历，包括创业过程、量化投资成就、技术积累等",
+                            "dependency": [
+
+                            ]
+                        },
+                        {
+                            "id": "1.3.1.2",
+                            "task_type": "search",
+                            "goal": "收集深求创始团队的详细背景信息，收集幻方公司的AI技术储备信息，特别是“萤火”系列超算平台的细节",
+                            "dependency": [
+
+                            ]
+                        },
+                        {
+                            "id": "1.3.1.3",
+                            "task_type": "write",
+                            "goal": "完成创始人背景和团队特点部分的撰写，突出梁文锋的量化投资成就和AI布局，以及年轻化的团队构成和技术实力",
+                            "length": "1200字",
+                            "dependency": [
+                                "1.3.1.1",
+                                "1.3.1.2"
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "id": "1.3.2",
+                    "task_type": "write",
+                    "goal": "撰写公司创立与初心愿景章节，描述2023年的创业背景和定位",
+                    "length": "1000字",
+                    "dependency": [
+
+                    ],
+                    "sub_tasks": [
+                        {
+                            "id": "1.3.2.1",
+                            "task_type": "search",
+                            "goal": "收集2023年AI行业背景资料，搜索梁文锋选择AI赛道的深层原因，特别是深求的差异化定位",
+                            "dependency": [
+
+                            ],
+                            "sub_tasks": [
+
+                            ]
+                        },
+                        {
+                            "id": "1.3.2.1",
+                            "task_type": "write",
+                            "goal": "撰写创业背景与时代机遇，以及初心战略定位和技术路线选择，特别是梁文锋选择AI赛道的深层原因，和深求的差异化定位",
+                            "length": "1000字",
+                            "dependency": [
+                                "1.3.2.1"
+                            ],
+                            "sub_tasks": [
+
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "id": "1.3.3",
+                    "task_type": "write",
+                    "goal": "撰写关键发展节点章节，详述V2、V3、R1三个重要产品的发布及影响",
+                    "length": "1800字",
+                    "dependency": [
+
+                    ],
+                    "sub_tasks": [
+                        {
+                            "id": "1.3.3.1",
+                            "task_type": "search",
+                            "goal": "收集深求V2、V3和R1发布的详细信息，及其对行业的影响",
+                            "dependency": [
+
+                            ]
+                        },
+                        {
+                            "id": "1.3.3.2",
+                            "task_type": "think",
+                            "goal": "分析三款产品的技术进步路径及其对行业的影响",
+                            "dependency": [
+                                "1.3.3.1"
+                            ]
+                        },
+                        {
+                            "id": "1.3.3.3",
+                            "task_type": "write",
+                            "goal": "撰写该章节，包含V2引发价格战、V3震撼发布和R1推理突破三个小节",
+                            "length": "1800字",
+                            "dependency": [
+                                "1.3.3.1",
+                                "1.3.3.2"
+                            ],
+                            "sub_tasks": [
+
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "id": "1.3.4",
+                    "task_type": "write",
+                    "goal": "在已撰写的V2、V3、R1发布及影响基础上，进一步撰写核心技术与产品优势章节，分析竞争力来源",
+                    "length": "1500字",
+                    "dependency": [
+
+                    ],
+                    "sub_tasks": [
+                        {
+                            "id": "1.3.4.1",
+                            "task_type": "search",
+                            "goal": "收集深求的技术创新点、算力优化方案和工程化创新信息",
+                            "dependency": [
+
+                            ],
+                            "sub_tasks": [
+
+                            ]
+                        },
+                        {
+                            "id": "1.3.4.2",
+                            "task_type": "write",
+                            "goal": "根据收集的资料和分析结论，撰写模型架构创新、软硬件协同优化、模型优化与蒸馏策略等内容",
+                            "length": "1500字",
+                            "dependency": [
+                                "1.3.4.1"
+                            ],
+                            "sub_tasks": [
+
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "id": "1.3.5",
+                    "task_type": "write",
+                    "goal": "撰写市场竞争格局与商业策略章节，分析与国内外对手的博弈",
+                    "length": "1200字",
+                    "dependency": [
+
+                    ],
+                    "sub_tasks": [
+                        {
+                            "id": "1.3.5.1",
+                            "task_type": "search",
+                            "goal": "收集国内外主要大模型公司（百度、阿里等）的产品策略和市场表现",
+                            "dependency": [
+
+                            ],
+                            "sub_tasks": [
+
+                            ]
+                        },
+                        {
+                            "id": "1.3.5.2",
+                            "task_type": "search",
+                            "goal": "收集并分析深求与其他大模型公司的差异化竞争策略",
+                            "dependency": [
+                                "1.3.5.1"
+                            ],
+                            "sub_tasks": [
+
+                            ]
+                        },
+                        {
+                            "id": "1.3.5.3",
+                            "task_type": "write",
+                            "goal": "根据收集的资料和分析结论，撰写国内竞争格局、国际竞争力与影响分析、商业策略创新分析等内容",
+                            "length": "1200字",
+                            "dependency": [
+                                "1.3.5.1",
+                                "1.3.5.2"
+                            ],
+                            "sub_tasks": [
+
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "id": "1.3.6",
+                    "task_type": "write",
+                    "goal": "进一步撰写行业影响与外界反响章节，总结深求的社会影响力",
+                    "length": "1000字",
+                    "dependency": [
+
+                    ],
+                    "sub_tasks": [
+
+                    ]
+                },
+                {
+                    "id": "1.3.7",
+                    "task_type": "write",
+                    "goal": "撰写未来展望章节，预测深求的发展方向和挑战",
+                    "length": "900字",
+                    "dependency": [
+
+                    ],
+                    "sub_tasks": [
+                        {
+                            "id": "1.3.7.1",
+                            "task_type": "search",
+                            "goal": "收集深求官方透露的未来发展规划和目标",
+                            "dependency": [
+
+                            ],
+                            "sub_tasks": [
+
+                            ]
+                        },
+                        {
+                            "id": "1.3.7.2",
+                            "task_type": "write",
+                            "goal": "根据收集的资料和分析结论，撰写未来展望章节，包含未来规划、技术创新展望、生态建设展望、人才战略展望和国际化展望",
+                            "length": "900字",
+                            "dependency": [
+                                "1.3.7.1"
+                            ],
+                            "sub_tasks": [
+
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

@@ -278,8 +278,5 @@ class KeywordExtractorZh:
 ###############################################################################
 
 
-keyword_extractor_zh = KeywordExtractorZh()
-
-
 
 

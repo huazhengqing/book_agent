@@ -3,11 +3,11 @@ from datetime import datetime
 
 
 """
-请整体评估 `mem_story_fact_zh` 的提示词，并指出其最大的优势和可以进一步强化的方向。
+请整体评估 `mem_book_fact_zh` 的提示词，并指出其最大的优势和可以进一步强化的方向。
 要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
 
 
-根据你的分析，直接修改 `mem_story_fact_zh` 文件并提供 diff。
+根据你的分析，直接修改 `mem_book_fact_zh` 文件并提供 diff。
 要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
 
 
@@ -18,7 +18,7 @@ from datetime import datetime
 你的输出被截断了，请从截断的地方继续
 """
 
-mem_story_fact_zh = f"""
+mem_book_fact_zh = f"""
 # 目标
 将输入内容（小说正文、设计文档、任务规划）转换为结构化的“事实”(Fact)列表，并封装在JSON中，确保信息完整性和检索精确性。
 
@@ -194,18 +194,18 @@ mem_story_fact_zh = f"""
 
 
 """
-请整体评估 `mem_story_update_zh` 的提示词，并指出其最大的优势和可以进一步强化的方向。
+请整体评估 `mem_book_update_zh` 的提示词，并指出其最大的优势和可以进一步强化的方向。
 要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
 
 
-根据你的分析，直接修改 `mem_story_update_zh` 文件并提供 diff。
+根据你的分析，直接修改 `mem_book_update_zh` 文件并提供 diff。
 要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
 
 
-分析 mem_story_fact_zh 和 mem_story_update_zh ，如何确保两者更好地协同？
+分析 mem_book_fact_zh 和 mem_book_update_zh ，如何确保两者更好地协同？
 """
 
-mem_story_update_zh = """
+mem_book_update_zh = """
 # 目标
 分析“新事实”和“现有记忆”，生成一个更新计划。为每条记忆指定一个操作 (`ADD`, `UPDATE`, `DELETE`, `NONE`)，确保记忆库的准确、一致、无冗余。
 
@@ -345,15 +345,15 @@ mem_story_update_zh = """
 
 
 """
-请整体评估 `mem_story_design_queries_zh_system` mem_story_design_queries_zh_user 的提示词，并指出其最大的优势和可以进一步强化的方向。
+请整体评估 `mem_book_design_queries_zh_system` mem_book_design_queries_zh_user 的提示词，并指出其最大的优势和可以进一步强化的方向。
 要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
 
 
-根据你的分析，直接修改  `mem_story_design_queries_zh_system` mem_story_design_queries_zh_user 文件并提供 diff。
+根据你的分析，直接修改  `mem_book_design_queries_zh_system` mem_book_design_queries_zh_user 文件并提供 diff。
 要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
 """
 
-mem_story_design_queries_zh_system = """
+mem_book_design_queries_zh_system = """
 # 目标
 为当前任务，生成检索"设计库"的关键词查询列表，确保写作时设计一致。
 
@@ -375,7 +375,7 @@ mem_story_design_queries_zh_system = """
 - 叙事风格: (仅限write任务) 固定查询为 `"风格指南 核心 视角 基调 文笔 节奏"`。
 """
 
-mem_story_design_queries_zh_user = """
+mem_book_design_queries_zh_user = """
 # 任务信息 (JSON)
 {task_info}
 
@@ -390,15 +390,15 @@ mem_story_design_queries_zh_user = """
 
 
 """
-请整体评估 mem_story_text_queries_zh_system  mem_story_text_queries_zh_user   的提示词，并指出其最大的优势和可以进一步强化的方向。
+请整体评估 mem_book_text_queries_zh_system  mem_book_text_queries_zh_user   的提示词，并指出其最大的优势和可以进一步强化的方向。
 要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
 
 
-根据你的分析，直接修改  mem_story_text_queries_zh_system  mem_story_text_queries_zh_user   文件并提供 diff。
+根据你的分析，直接修改  mem_book_text_queries_zh_system  mem_book_text_queries_zh_user   文件并提供 diff。
 要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
 """
 
-mem_story_text_queries_zh_system = """
+mem_book_text_queries_zh_system = """
 # 目标
 为当前任务，生成检索“正文库”的关键词查询列表，确保写作时上下文连贯。
 
@@ -453,7 +453,7 @@ mem_story_text_queries_zh_system = """
     - `预期`: 计划失败、意外结果。
 """
 
-mem_story_text_queries_zh_user = """
+mem_book_text_queries_zh_user = """
 # 任务信息 (JSON)
 {task_info}
 

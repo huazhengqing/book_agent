@@ -1,8 +1,8 @@
 #!/bin/bash
 
 
-task_input_file=../test/story.jsonl
-output_folder=../test/story/
+task_input_file=../test/book.jsonl
+output_folder=../test/book/
 mkdir -p ${output_folder}
 task_output_file=${output_folder}/output.jsonl
 done_file=${output_folder}/done.txt
@@ -18,7 +18,7 @@ rm -rf ../.litellm_cache
 rm -rf ../.mem0
 rm -rf ../.cache
 rm -rf ../test/log
-rm -rf ../test/report
+rm -rf ../test/book
 
 
 # docker-compose stop
@@ -30,5 +30,5 @@ docker ps -a | grep qdrant
 
 
 source ../venv/bin/activate
-python3 engine.py --filename $task_input_file --output-filename $task_output_file --done-flag-file $done_file --mode story --language zh >> run_story.log 2>&1
+python3 engine.py --filename $task_input_file --output-filename $task_output_file --done-flag-file $done_file --mode book --language zh >> run_book.log 2>&1
 

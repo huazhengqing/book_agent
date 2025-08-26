@@ -1,8 +1,8 @@
 #!/bin/bash
 
 
-task_input_file=../test/story.jsonl
-output_folder=../test/story/
+task_input_file=../test/report.jsonl
+output_folder=../test/report/
 mkdir -p ${output_folder}
 task_output_file=${output_folder}/output.jsonl
 done_file=${output_folder}/done.txt
@@ -30,5 +30,5 @@ docker ps -a | grep qdrant
 
 
 source ../venv/bin/activate
-python3 engine.py --filename $task_input_file --output-filename $task_output_file --done-flag-file $done_file --mode story --language zh >> run_story.log 2>&1
+python3 engine.py --filename $task_input_file --output-filename $task_output_file --done-flag-file $done_file --mode report --language zh >> run_report.log 2>&1
 
