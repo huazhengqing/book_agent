@@ -151,7 +151,7 @@ class Mem0:
         }
         prompt_config = {
             "story": (mem_story_fact_zh, mem_story_update_zh),
-            "book": ("", ""), 
+            "book": (mem_book_fact_zh, mem_book_update_zh), 
             "report": (mem_report_fact_zh, mem_report_update_zh) 
         }
         
@@ -199,7 +199,7 @@ class Mem0:
         dependency = task_info.get("dependency", [])
         task_str = json.dumps(task_info, ensure_ascii=False)
         dependency_str = json.dumps(dependency, ensure_ascii=False)
-        logger.info(f"mem0 添加记忆 {task_info}")
+        logger.info(f"mem0 add {task_info}")
 
         # 内容类型配置：{content_type: (category, format_template, cache_to_clear)}
         content_configs = {
@@ -228,14 +228,16 @@ class Mem0:
             "dependency": dependency_str,
         }
         
-        logger.info(f"mem0 添加记忆 {self.writing_mode}_{self.language}_{hashkey}_{category}\n{mem0_content}\n{mem_metadata}")
+        logger.info(f"mem0 add {self.writing_mode}_{self.language}_{hashkey}_{category}\n{mem0_content}\n{mem_metadata}")
         self.client.add(
             mem0_content,
             user_id=f"{self.writing_mode}_{self.language}_{hashkey}_{category}",
             metadata=mem_metadata
         )
 
+
     def search(self, hashkey, querys, category, limit=30, filters=None):
+        logger.info(f"mem0 search: {querys}")
         if not querys:
             return []
         
@@ -243,25 +245,25 @@ class Mem0:
         unique_queries = list(dict.fromkeys([q.strip() for q in querys if q and q.strip()]))
         if not unique_queries:
             return []
-        
-        user_id = f"{self.writing_mode}_{self.language}_{hashkey}_{category}"
-        
-        # 使用 OR 连接所有独立查询，以最大化召回可能相关的文档。
-        # 检索的精确性更多地依赖于后续的重排序步骤，而不是复杂的布尔查询。
         query = " OR ".join([f"({q})" for q in unique_queries])
         
+        user_id = f"{self.writing_mode}_{self.language}_{hashkey}_{category}"
+
         logger.info(f"mem0 搜索记忆 {user_id}\n查询: {query[:200]}...\n查询数: {len(unique_queries)}\n限制: {limit}\n过滤器: {filters}")
-        
         results = self.client.search(
             query=query,
             user_id=user_id,
             limit=limit,
             filters=filters
         )
-        logger.info(f"mem0 搜索完成: {len(unique_queries)} 个查询返回 {results}")
+        logger.info(f"mem0 search: {results}")
         return results
     
 
+    """
+    检索设计结果
+    替换 agent/agents/regular.py 中的 get_llm_output 中的 to_run_outer_graph_dependent
+    """
     def get_outer_graph_dependent(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
         task_id = task_info.get("id")
         if not task_id or task_id == "" or task_id == "0":
@@ -276,109 +278,13 @@ class Mem0:
         cached_result = self.cache_design.get(cache_key)
         if cached_result is not None:
             return cached_result
-
-        # 写作模式方法映射
-        method_map = {
-            "story": lambda: self.get_story_outer_graph_dependent(hashkey, task_info, same_graph_dependent_designs, latest_content),
-            "book": lambda: "",
-            "report": lambda: ""
-        }
         
-        if self.writing_mode not in method_map:
-            raise ValueError(f"不支持的写作模式: {self.writing_mode}")
-        
-        ret = method_map[self.writing_mode]()
-        self.cache_design.set(cache_key, ret)
-        return ret
-
-    def get_content(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
-        task_id = task_info.get("id")
-        if not task_id or task_id == "" or task_id == "0":
-            raise ValueError(f"任务信息中未找到任务ID {task_id} \n 任务信息: {task_info}")
-
-        if not latest_content.strip() or latest_content.strip() == "" or  len(latest_content) < 500:
-            return ""
-
-        s = f"{hashkey}\n{task_info}\n{same_graph_dependent_designs}\n{latest_content}"
-        cache_key = hashlib.blake2b(s.encode('utf-8'), digest_size=32).hexdigest()
-        cached_result = self.cache_text.get(cache_key)
-        if cached_result is not None:
-            return cached_result
-
-        # 写作模式方法映射
-        method_map = {
-            "story": lambda: self.get_story_content(hashkey, task_info, same_graph_dependent_designs, latest_content),
-            "book": lambda: "",
-            "report": lambda: ""
-        }
-        
-        if self.writing_mode not in method_map:
-            raise ValueError(f"不支持的写作模式: {self.writing_mode}")
-        
-        ret = method_map[self.writing_mode]()
-        self.cache_text.set(cache_key, ret)
-        return ret
-
-    def _generate_queries(self, category, task_info, context_str):
-        """
-        使用轻量级LLM根据任务和上下文动态生成用于检索"设计库"、"小说正文"的搜索查询词。
-        """
-        if category not in ["design", "text"]:
-            raise ValueError(f"不支持的类别: {category}")
-        
-        # 配置映射：{(category, writing_mode, language): (prompt_system, prompt_user_template)}
-        prompt_config = {
-            ("design", "story", "zh"): (mem_story_design_queries_zh_system, mem_story_design_queries_zh_user),
-            ("text", "story", "zh"): (mem_story_text_queries_zh_system, mem_story_text_queries_zh_user),
-            ("design", "report", "zh"): (mem_report_design_queries_zh_system, mem_report_design_queries_zh_user),
-            ("text", "report", "zh"): (mem_report_text_queries_zh_system, mem_report_text_queries_zh_user),
-        }
-        config_key = (category, self.writing_mode, self.language)
-        if config_key not in prompt_config:
-            raise ValueError(f"未配置提示词: {config_key}")
-        
-        prompt_system, prompt_user_template = prompt_config[config_key]
-        prompt_user = prompt_user_template.format(
-            task_info=json.dumps(task_info, ensure_ascii=False, indent=2),
-            context_str=context_str
-        )
-
-        llm_call_func = {
-            "zh": llm_client.call_fast_zh,
-            "en": llm_client.call_fast_en
-        }.get(self.language)
-        if not llm_call_func:
-            raise ValueError(f"不支持的语言: {self.language}")
-        
-        response = llm_call_func(
-            messages=[{"role": "system", "content": prompt_system}, {"role": "user", "content": prompt_user}],
-            temperature=0.2,
-        )
-        if response is None:
-            raise ValueError("LLM响应为空")
-        
-        content = response[0].message.content
-        logger.info(f"mem0 生成查询 {self.writing_mode}_{self.language}_{category}\n响应: {content}")
-        
-        queries = json.loads(content)
-        if not isinstance(queries, list):
-            raise ValueError(f"无效的查询: {queries}")
-        
-        return queries
-
-    def get_story_outer_graph_dependent(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
-        """
-        检索设计结果
-        替换 agent/agents/regular.py 中的 get_llm_output 中的 to_run_outer_graph_dependent
-        """
         llm_queries = self._generate_queries(
             category="design",
             task_info=task_info,
-            context_str=f"相关设计:\n{same_graph_dependent_designs}\n\n最新内容:\n{latest_content}"
+            context_str=f"相关分析设计:\n{same_graph_dependent_designs}\n\n最新内容:\n{latest_content}"
         )
         
-        task_id = task_info.get('id', '')
-        cur_hierarchy_level = len(task_id.split(".")) if task_id else 1
         filters = {
             "content_type": "design_result",
             "hierarchy_level": {"gte": 1, "lt": cur_hierarchy_level}
@@ -413,19 +319,38 @@ class Mem0:
             if memory_content and memory_content not in seen_contents:
                 combined_results.append(memory_content)
                 seen_contents.add(memory_content)
-        logger.info(f"mem0 获取故事外部图依赖 {self.writing_mode}_{self.language}_{hashkey}\n{task_info}\n{combined_results}")
-        return "\n\n".join(combined_results)
+        ret = "\n\n".join(combined_results)
+        
+        self.cache_design.set(cache_key, ret)
 
-    def get_story_content(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
-        """
-        检索小说已经写的正文内容
-        替换 agent/agents/regular.py 中的 get_llm_output 中的 memory.article
-        """
+        logger.info(f"mem0 get_outer_graph_dependent {self.writing_mode}_{self.language}_{hashkey}\n{task_info}\n{combined_results}")
+        return ret
+
+
+    """
+    检索已经写的正文内容
+    替换 agent/agents/regular.py 中的 get_llm_output 中的 memory.article
+    """
+    def get_content(self, hashkey, task_info, same_graph_dependent_designs, latest_content):
+        task_id = task_info.get("id")
+        if not task_id or task_id == "" or task_id == "0":
+            raise ValueError(f"任务信息中未找到任务ID {task_id} \n 任务信息: {task_info}")
+
+        if not latest_content.strip() or latest_content.strip() == "" or  len(latest_content) < 500:
+            return ""
+
+        s = f"{hashkey}\n{task_info}\n{same_graph_dependent_designs}\n{latest_content}"
+        cache_key = hashlib.blake2b(s.encode('utf-8'), digest_size=32).hexdigest()
+        cached_result = self.cache_text.get(cache_key)
+        if cached_result is not None:
+            return cached_result
+
         llm_queries = self._generate_queries(
             category="text",
             task_info=task_info,
-            context_str=f"最新正文内容:\n{latest_content}\n\n相关设计:\n{same_graph_dependent_designs}"
+            context_str=f"最新正文内容:\n{latest_content}\n\n相关分析设计:\n{same_graph_dependent_designs}"
         )
+
         all_results = self.search(hashkey, llm_queries, "text", limit=500)
         
         # 简化的文本排序策略：时间优先，相关性为辅
@@ -455,12 +380,65 @@ class Mem0:
             if memory_content and memory_content not in seen_contents:
                 combined_results.append(memory_content)
                 seen_contents.add(memory_content)
-        logger.info(f"mem0 获取故事内容 {self.writing_mode}_{self.language}_{hashkey}\n{task_info}\n{combined_results}")
-        return "\n\n".join(combined_results)
+        ret = "\n\n".join(combined_results)
 
-    def get_full_plan(self, hashkey, task_info):
-        pass
- 
+        self.cache_text.set(cache_key, ret)
+
+        logger.info(f"mem0 get_content {self.writing_mode}_{self.language}_{hashkey}\n{task_info}\n{combined_results}")
+        return ret
+
+
+    """
+    使用轻量级LLM根据任务和上下文动态生成用于检索"分析设计文档"、"正文"的搜索查询词。
+    """
+    def _generate_queries(self, category, task_info, context_str):
+        if category not in ["design", "text"]:
+            raise ValueError(f"不支持的类别: {category}")
+        
+        # 配置映射：{(category, writing_mode, language): (prompt_system, prompt_user_template)}
+        prompt_config = {
+            ("design", "story", "zh"): (mem_story_design_queries_zh_system, mem_story_design_queries_zh_user),
+            ("text", "story", "zh"): (mem_story_text_queries_zh_system, mem_story_text_queries_zh_user),
+            ("design", "report", "zh"): (mem_report_design_queries_zh_system, mem_report_design_queries_zh_user),
+            ("text", "report", "zh"): (mem_report_text_queries_zh_system, mem_report_text_queries_zh_user),
+            ("design", "book", "zh"): (mem_book_design_queries_zh_system, mem_book_design_queries_zh_user),
+            ("text", "book", "zh"): (mem_book_text_queries_zh_system, mem_book_text_queries_zh_user),
+        }
+
+        config_key = (category, self.writing_mode, self.language)
+        if config_key not in prompt_config:
+            raise ValueError(f"未配置提示词: {config_key}")
+        
+        prompt_system, prompt_user_template = prompt_config[config_key]
+        prompt_user = prompt_user_template.format(
+            task_info=json.dumps(task_info, ensure_ascii=False, indent=2),
+            context_str=context_str
+        )
+
+        llm_call_func = {
+            "zh": llm_client.call_fast_zh,
+            "en": llm_client.call_fast_en
+        }.get(self.language)
+        if not llm_call_func:
+            raise ValueError(f"不支持的语言: {self.language}")
+        
+        response = llm_call_func(
+            messages=[{"role": "system", "content": prompt_system}, {"role": "user", "content": prompt_user}],
+            temperature=0.2,
+        )
+        if response is None:
+            raise ValueError("LLM响应为空")
+        
+        content = response[0].message.content
+        logger.info(f"mem0 生成查询 {self.writing_mode}_{self.language}_{category}\n响应: {content}")
+        
+        queries = json.loads(content)
+        if not isinstance(queries, list):
+            raise ValueError(f"无效的查询: {queries}")
+        
+        return queries
+
+
 
 ###############################################################################
 

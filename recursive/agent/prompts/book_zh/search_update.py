@@ -5,113 +5,125 @@ from datetime import datetime
 now = datetime.now()
 
 
+
+"""
+请整体评估 `search_update.py` 的提示词，并指出其最大的优势和可以进一步强化的方向。
+要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
+
+
+根据你的分析，直接修改 `search_update.py` 文件并提供 diff。
+要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
+
+
+改进 这段提示词
+要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
+
+
+你的输出被截断了，请从截断的地方继续
+"""
+
+
 @prompt_register.register_module()
 class BookSearchUpdateZh(PromptTemplate):
     def __init__(self) -> None:
-        system_message = ""
+        system_message = """
+# 核心任务
+根据上下文，优化当前搜索任务的`goal`，使其更精确、可执行。
+
+
+# 上下文使用指南
+- 优先关注: `已完成的依赖任务结果` 和 `需要你更新的当前搜索任务`。
+- 辅助参考: `已撰写的报告内容` 和 `整体计划` 用于理解背景，修正不一致或错误的目标。
+
+
+# 更新规则
+- 依赖替换: 使用已完成任务的结果，替换`goal`中的指代词。
+    - 例：`搜索该年份的重大事件` + `结果：1980年` -> `搜索1980年的重大事件`
+- 目标细化: 结合已有信息，使`goal`更具体、可执行。
+    - 例：`搜索公司信息` + `结果：公司名为DeepSeek` -> `搜索DeepSeek公司的详细信息，包括创始人、融资历史和主要产品`
+- 目标修正: 根据已有信息，修正`goal`中明显错误或不合理的部分。
+    - 例：`搜索DeepSeek V2在2023年的影响` + `结果：DeepSeek V2于2024年发布` -> `搜索DeepSeek V2在2024年发布后的影响`
+- 保持不变: 如果`goal`明确、无需更新，则直接输出原始`goal`。
+
+
+# 输出格式
+- 必须严格遵循以下XML格式。不要在`<result>`标签前后添加任何文本或解释。
+<result>
+<goal_updating>
+[更新后的任务目标]
+</goal_updating>
+</result>
+
+
+# 示例
+
+## 示例 1: 无需更新
+- 原始任务: `搜索姚明的出生年份`
+- 上下文: (无相关信息)
+- 输出:
+<result>
+<goal_updating>
+搜索姚明的出生年份
+</goal_updating>
+</result>
+
+## 示例 2: 依赖替换
+- 已有信息: `任务1“搜索姚明的出生年份”的结果是“1980年”`
+- 原始任务: `根据确定的年份，查找当年的NBA总决赛信息`
+- 输出:
+<result>
+<goal_updating>
+查找1980年的NBA总决赛信息
+</goal_updating>
+</result>
+
+## 示例 3: 目标细化
+- 已有信息: `已撰写的报告内容：DeepSeek是一家专注于大模型的AI公司。`
+- 原始任务: `搜索公司信息`
+- 输出:
+<result>
+<goal_updating>
+搜索AI公司DeepSeek的详细信息，包括创始团队、融资历史、技术突破和主要产品
+</goal_updating>
+</result>
+
+## 示例 4: 目标修正
+- 已有信息: `依赖任务结果：DeepSeek V2模型于2024年5月发布。`
+- 原始任务: `搜索DeepSeek V2在2023年发布后，对行业价格战的影响`
+- 输出:
+<result>
+<goal_updating>
+搜索DeepSeek V2在2024年5月发布后，对行业价格战的影响
+</goal_updating>
+</result>
+""".strip()
+        
         
         content_template = """
-results of search and analysis tasks completed:
-```
+# 当前日期
+{today_date}
+
+
+# 当前任务
+- 需要你更新的当前搜索任务
+{to_run_task}
+
+
+# 整体计划
+{to_run_full_plan}
+
+
+# 上级依赖
 {to_run_outer_graph_dependent}
 
+
+# 同级依赖
 {to_run_same_graph_dependent}
-```
 
-already-written report:
-```
+
+# 已撰写的报告内容
 {to_run_article}
-```
-
-overall plan
-```
-{to_run_full_plan}
-```
-
-The search task you need to update/correct/update:
-```
-{to_run_task}
-```
-
----
-# Summary and Introduction
-Today is {today_date}, You are the goal updating Agent in a recursive professional report-writing planning system:
-
-- Based on the overall plan, the already-written report, existing search results and analysis conclusions, update, or correct the current search tasks goal (information requirements) as needed.
-\t- When the references in the task goal can be resolved using the results from the search or analysis tasks, update the task goal.
-\t- When combining the results of search tasks or analysis tasks can make the task goal more specific, update the task goal.
-\t- Carefully review the results of the dependent search or analysis tasks. If the current task goal is inappropriate or contains errors based on these results, update the task goal.
-\t- Don't make goals overly detailed
-
-# Output Format
-directly output the updated goal in `<result><goal_updating></goal_updating></result>`. If theres no need to update, output the original goal directly and simply.
-
-The specific format is as follows:
-<result>
-<goal_updating>
-[Updated goal]
-</goal_updating>
-</result>
-
-# Examples
-## Example1
-Task: Find Yao Ming's birth year and ensure the information is accurate.
--> There's no need to update
-## Example2
-Task: Find Yao Ming's birth year
--> There's no need to update
-## Example 3
-Task1: Find Yao Ming's birth year => Result is 1980
-Task2 (depend Task1): Based on the determined year, look up the NBA Finals of that year, focusing on the runner-up team and its head coach information
-Update the Task2 to: look up the NBA Finals of 1080, focusing on the runner-up team and its head coach information
-
---
-The search task you need to update/correct/update:
-```
-{to_run_task}
-```
-
-Do your job as I told you, and output the answer follow the # Output Format.
 """.strip()
+
+
         super().__init__(system_message, content_template)
-
-
-###############################################################################
-
-
-"""
-# 初版的提示词：
-
-
-# Summary and Introduction
-Today is {today_date}, You are the goal updating Agent in a recursive professional report-writing planning system:
-
-- Based on the overall plan, the already-written report, existing search results and analysis conclusions, update, or correct the current search tasks goal (information requirements) as needed.
-\t- When the references in the task goal can be resolved using the results from the search or analysis tasks, update the task goal.
-\t- When combining the results of search tasks or analysis tasks can make the task goal more specific, update the task goal.
-\t- Carefully review the results of the dependent search or analysis tasks. If the current task goal is inappropriate or contains errors based on these results, update the task goal.
-\t- Don't make goals overly detailed
-
-# Output Format
-directly output the updated goal in `<result><goal_updating></goal_updating></result>`. If theres no need to update, output the original goal directly and simply.
-
-The specific format is as follows:
-<result>
-<goal_updating>
-[Updated goal]
-</goal_updating>
-</result>
-
-# Examples
-## Example1
-Task: Find Yao Ming's birth year and ensure the information is accurate.
--> There's no need to update
-## Example2
-Task: Find Yao Ming's birth year
--> There's no need to update
-## Example 3
-Task1: Find Yao Ming's birth year => Result is 1980
-Task2 (depend Task1): Based on the determined year, look up the NBA Finals of that year, focusing on the runner-up team and its head coach information
-Update the Task2 to: look up the NBA Finals of 1080, focusing on the runner-up team and its head coach information
-"""
-

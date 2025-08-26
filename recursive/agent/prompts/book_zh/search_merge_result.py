@@ -5,70 +5,68 @@ from datetime import datetime
 now = datetime.now()
 
 
+"""
+请整体评估 `search_merge_result.py` 的提示词，并指出其最大的优势和可以进一步强化的方向。
+要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
+
+
+根据你的分析，直接修改 `search_merge_result.py` 文件并提供 diff。
+要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
+
+
+改进 这段提示词
+要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
+
+
+你的输出被截断了，请从截断的地方继续
+"""
+
+
 @prompt_register.register_module()
 class BookSearchMergeResultZh(PromptTemplate):
     def __init__(self) -> None:
         system_message = """
-# Your Task
-Today is {today_date}, you are a search result integration specialist. Based on a given search task, you need to perform comprehensive, thorough, accurate and traceable secondary information organization and integration of a set of search results for that task, to support subsequent retrieval-augmented writing tasks.
+# 角色
+你是一名顶级的搜索结果整合专家。
 
-# Input Information
-- **Search Task**: The search task corresponding to the search results. You need to organize, integrate and extract information from the search results centered around this task as much as possible, with more detail and completeness being better.
-- **Search Results and Short Summaries**: A set of search results (web pages) collected for the search task, represented in XML format. I will provide you the original web pages (summary), and a series of simple integrations of the search results which you need to integrate secondarily. The original web pages are optional.
-    - search_result: The summary and metainfo of the each web pages.
-    - web_pages_short_summary: **Simple integration** of search web pages. This integration will appear multiple times, with each integration covering search results before this tag appears (which I have not provided to you). The **index=x** or **id=x** indicates the source webpage number.
 
-# Requirements  
-- No fabrication allowed - all information must come entirely from the provided search result summaries
-- Must mark information sources using "webpage[webpage index]" for traceability, where index in web_pages_short_summary indicates webpage ID
-- More detailed and complete is better - details matter, do not lose any detailed information from **web_pages_short_summary**
-- Do not invent content just to meet the requirement for detail
-- Attention, not all web results are relevant and useful, be careful and organize useful things.
+# 任务
+根据用户提供的【总任务】、【子任务】和【搜索任务】，整合【搜索结果】。
 
-# Output Format
-1. First, provide brief thoughts within <think></think> tags
-2. in <result></result> tags, output your secondary information organization and integration results, which must be as complete, refined and thorough as possible, with source tracing through webpage IDs
-Do not append any other information after </result>
+
+# 规则
+- 忠实原文: 内容必须完全来自【搜索结果】，禁止任何推理、杜撰或外部信息。
+- 标注来源: 每条信息后，必须以 `webpage[索引号]` 格式注明来源。
+- 聚焦任务: 只整合与【搜索任务】目标高度相关的信息。
+- 保留细节: 在相关的前提下，保留所有关键细节。
+
+
+# 输出
+- 将所有整合内容放入 `<result>` 标签内。
+- 除 `<result>` 标签和其内容外，禁止任何其他输出。
 """.strip()
 
 
         content_template = """
-The overall writing task from the user is: **{to_run_root_question}**. This task has been further divided into a sub-writing task that requires the information you collect: **{to_run_outer_write_task}**.  
+# 当前日期
+{today_date}
 
-Within the context of the overall writing request and the sub-writing task, you need to understand the requirements of your assigned search result integration sub-task, and only integrate for it: **{to_run_search_task}**, from the **Search Results and Short Summarys**.  
 
----
-**Search Results and Short Summarys**:
-```
+# 待整合的搜索结果
 {to_run_search_results}
-```
---
 
-Organize and integrate information from **Search Results and Short Summarys** as instructions in # Your Task, # Input Information and # Requirements. Output as # Output Format, first brief think in <think></think> then give the complete results in <result></result>. Do not forget to marking information sources using "webpage[webpage index]" for traceability, where index in web_pages_short_summary indicates webpage ID.
+
+# 写作总任务
+{to_run_root_question}
+
+
+# 当前子任务
+{to_run_outer_write_task}
+
+
+# 本次搜索任务
+{to_run_search_task}
 """.strip()
+
+
         super().__init__(system_message, content_template)
-
-
-###############################################################################
-
-
-"""
-# 初版的提示词：
-
-
-# Your Task
-Today is {today_date}, you are a search result integration specialist. Based on a given search task, you need to perform comprehensive, thorough, accurate and traceable secondary information organization and integration of a set of search results for that task, to support subsequent retrieval-augmented writing tasks.
-
-# Input Information
-- **Search Task**: The search task corresponding to the search results. You need to organize, integrate and extract information from the search results centered around this task as much as possible, with more detail and completeness being better.
-- **Search Results and Short Summaries**: A set of search results (web pages) collected for the search task, represented in XML format. I will provide you the original web pages (summary), and a series of simple integrations of the search results which you need to integrate secondarily. The original web pages are optional.
-    - search_result: The summary and metainfo of the each web pages.
-    - web_pages_short_summary: **Simple integration** of search web pages. This integration will appear multiple times, with each integration covering search results before this tag appears (which I have not provided to you). The **index=x** or **id=x** indicates the source webpage number.
-
-# Requirements  
-- No fabrication allowed - all information must come entirely from the provided search result summaries
-- Must mark information sources using "webpage[webpage index]" for traceability, where index in web_pages_short_summary indicates webpage ID
-- More detailed and complete is better - details matter, do not lose any detailed information from **web_pages_short_summary**
-- Do not invent content just to meet the requirement for detail
-- Attention, not all web results are relevant and useful, be careful and organize useful things.
-"""
