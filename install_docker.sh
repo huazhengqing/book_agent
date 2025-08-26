@@ -24,11 +24,16 @@ docker info | grep "Registry Mirrors" -A 5
 docker pull memgraph/memgraph-mage:latest
 docker pull memgraph/lab:latest
 docker pull qdrant/qdrant:latest
+docker pull valkey/valkey:8-alpine
+docker pull searxng/searxng:latest
+
 
 
 
 docker volume create memgraph-data
 docker volume create qdrant_storage
+docker volume create valkey-data2
+docker volume create searxng-data
 
 
 
