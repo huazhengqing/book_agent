@@ -830,8 +830,7 @@ def report_writing(input_filename,
             result = engine.forward_one_step_untill_done(save_folder=folder, nl=True, nodes_json_file=nodes_json_file)    
         except Exception as e:
             logger.error("Encounter exception: {}\nWhen Process {}".format(traceback.format_exc(), question))
-            raise e
-            # continue
+            continue
             
         
         result = get_report_with_ref(engine.root_node.to_json(), result)
