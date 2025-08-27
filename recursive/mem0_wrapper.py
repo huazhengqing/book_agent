@@ -124,6 +124,7 @@ class Mem0:
                 "provider": "litellm",
                 "config": {
                     "model": 'openai/deepseek-ai/DeepSeek-V3',
+                    # "model": 'openrouter/deepseek/deepseek-chat-v3-0324:free',
                     "temperature": 0.0,
                     "max_tokens": 131072,
                     "caching": True,
@@ -133,8 +134,13 @@ class Mem0:
                     "respect_retry_after": True,
                     "fallbacks": [
                         # 'openai/deepseek-ai/DeepSeek-V3',
+
                         'openrouter/deepseek/deepseek-chat-v3-0324:free',
-                        # 'openrouter/qwen/qwen3-32b'
+
+                        # 'openrouter/meta-llama/llama-3.2-3b-instruct', 
+                        # 'openrouter/liquid/lfm-7b', 
+                        # 'openrouter/meta-llama/llama-3.1-8b-instruct', 
+                        # 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b', 
                     ]
                 }
             },
@@ -225,6 +231,9 @@ class Mem0:
         mem0_content = format_func(content, task_str)
         getattr(self, cache_attr).clear()  # 清理对应缓存
 
+        # 预处理内容，清理可能引起问题的特殊字符
+        mem0_content = self._preprocess_content(mem0_content)
+
         parent_task_id = ".".join(task_id.split(".")[:-1]) if task_id and "." in task_id else ""
         mem_metadata = {
             "category": category,
@@ -243,6 +252,38 @@ class Mem0:
             metadata=mem_metadata
         )
 
+    def _preprocess_content(self, content):
+        """
+        预处理内容，清理可能引起问题的特殊字符
+        特别是处理可能在图数据库中引起解析错误的字符
+        """
+        if not isinstance(content, str):
+            return content
+            
+        # 如果内容包含可能的关系定义（如表格形式的关系数据），需要特别处理
+        # 查找并清理关系名称中的特殊字符
+        import re
+        
+        # 匹配可能的关系定义模式，如 "目标/"、"功能/阵营" 等
+        # 这里处理在表格或结构化数据中可能包含的关系名称
+        def clean_relationship_name(match):
+            relationship = match.group(0)
+            # 清理关系名称中的特殊字符
+            cleaned = relationship.lower()
+            # 替换特殊字符
+            special_chars = ['/', '-', ':', '.', ',', ';', '!', '?', '"', "'", '(', ')', '[', ']', '{', '}']
+            for char in special_chars:
+                cleaned = cleaned.replace(char, '_')
+            # 移除多余的下划线
+            cleaned = '_'.join(filter(None, cleaned.split('_')))
+            return cleaned
+            
+        # 处理可能包含关系名称的模式
+        # 这里处理常见的模式，如表格中的表头或结构化数据中的关系标识
+        content = re.sub(r'[^\s]{1,50}/[^\s]{1,50}', clean_relationship_name, content)
+        content = re.sub(r'[^\s]{1,50}:[^\s]{1,50}', clean_relationship_name, content)
+        
+        return content
 
     def search(self, hashkey, querys, category, limit=30, filters=None):
         logger.info(f"mem0 search: {querys}")

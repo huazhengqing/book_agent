@@ -18,7 +18,6 @@ models/
 venv/
 bak/
 tmp/
-docs/
 bug/
 output/cache/
 output/story/
@@ -33,7 +32,7 @@ recursive/.cache/
 searxng/
 *.pyc
 *.log
-*.md
+*.pdf
 test_*.py
 
 output.jsonl

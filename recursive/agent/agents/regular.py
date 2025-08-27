@@ -180,7 +180,8 @@ def get_llm_output(node, agent, memory, agent_type, overwrite_cache=False, *args
             content = llm_result["result"]
             content_type = "search_result"
     if content and content_type and node.task_info:
-        get_mem0(memory.config).add(memory.root_node.hashkey, content, content_type, node.task_info)
+        if content_type not in ["task_decomposition", "task_update"]:
+            get_mem0(memory.config).add(memory.root_node.hashkey, content, content_type, node.task_info)
         
 
 

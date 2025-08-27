@@ -42,22 +42,9 @@ class LiteLLMProxy:
 
     def call_reasoning(self, messages=None, tools=None, temperature=None, **kwargs):
         messages = copy.deepcopy(messages)
-        # litellm_params = {
-        #     'model': 'openai/deepseek-ai/DeepSeek-R1-0528',
-        #     'messages': messages,
-        #     'temperature': 0.2,
-        #     'caching': True,
-        #     'max_tokens': 131072,
-        #     'max_completion_tokens': 131072,
-        #     'timeout': 900,
-        #     'num_retries': 2,
-        #     'respect_retry_after': True,
-        #     'fallbacks': [
-        #         'openrouter/deepseek/deepseek-r1-0528:free'
-        #         ]
-        # }
         litellm_params = {
             'model': 'openrouter/deepseek/deepseek-r1-0528:free',
+            # 'model': 'openai/deepseek-ai/DeepSeek-R1-0528',
             'messages': messages,
             'temperature': 0.2,
             'caching': True,
@@ -67,7 +54,14 @@ class LiteLLMProxy:
             'num_retries': 5,
             'respect_retry_after': True,
             'fallbacks': [
-                'openai/deepseek-ai/DeepSeek-R1-0528'
+                'openai/deepseek-ai/DeepSeek-R1-0528', 
+
+                # 'openrouter/deepseek/deepseek-r1-0528:free', 
+
+                # 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b', 
+                # 'openrouter/qwen/qwen3-32b', 
+                # 'openrouter/qwen/qwen3-30b-a3b', 
+                # 'openrouter/deepseek/deepseek-r1-distill-llama-70b', 
                 ]
         }
         if temperature is not None:
@@ -85,18 +79,24 @@ class LiteLLMProxy:
         messages = copy.deepcopy(messages)
         litellm_params = {
             'model': 'openai/deepseek-ai/DeepSeek-V3',
+            # 'model': 'openrouter/deepseek/deepseek-chat-v3-0324:free',
             'messages': messages,
             'temperature': 0.0,
             'caching': True,
-            'max_tokens': 131072,
-            'max_completion_tokens': 131072,
+            'max_tokens': 163840,
+            'max_completion_tokens': 163840,
             'timeout': 300,
             'num_retries': 5,
             'respect_retry_after': True,
             'fallbacks': [
                 # 'openai/deepseek-ai/DeepSeek-V3',
+
                 'openrouter/deepseek/deepseek-chat-v3-0324:free',
-                # 'openrouter/qwen/qwen3-32b'
+
+                # 'openrouter/meta-llama/llama-3.2-3b-instruct', 
+                # 'openrouter/liquid/lfm-7b', 
+                # 'openrouter/meta-llama/llama-3.1-8b-instruct', 
+                # 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b', 
             ]
         }
         if temperature is not None:
@@ -114,19 +114,24 @@ class LiteLLMProxy:
         messages = copy.deepcopy(messages)
         litellm_params = {
             'model': 'openai/deepseek-ai/DeepSeek-V3',
+            # 'model': 'openrouter/deepseek/deepseek-chat-v3-0324:free',
             'messages': messages,
             'temperature': 0.0,
             'caching': True,
-            'max_tokens': 131072,
-            'max_completion_tokens': 131072,
+            'max_tokens': 163840,
+            'max_completion_tokens': 163840,
             'timeout': 300,
             'num_retries': 5,
             'respect_retry_after': True,
             'fallbacks': [
                 # 'openai/deepseek-ai/DeepSeek-V3',
+
                 'openrouter/deepseek/deepseek-chat-v3-0324:free',
-                # 'meta-llama/llama-3.2-3b-instruct',
-                # 'google/gemma-2-9b-it'
+
+                # 'openrouter/meta-llama/llama-3.2-3b-instruct', 
+                # 'openrouter/liquid/lfm-7b', 
+                # 'openrouter/meta-llama/llama-3.1-8b-instruct', 
+                # 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b', 
             ]
         }
         if temperature is not None:
