@@ -34,6 +34,7 @@ searxng/
 *.log
 *.pdf
 test_*.py
+*_test.py
 
 output.jsonl
 done.txt

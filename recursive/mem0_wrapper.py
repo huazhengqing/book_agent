@@ -29,6 +29,9 @@ from recursive.agent.prompts.book_zh.mem import (
     mem_book_text_queries_zh_system,
     mem_book_text_queries_zh_user
 )
+from recursive.agent.prompts.story_zh.graph import (
+    graph_story_zh
+)
 import diskcache
 import hashlib
 from datetime import datetime
@@ -156,7 +159,8 @@ class Mem0:
                     "url": os.getenv("memgraph_url"),
                     "username": os.getenv("memgraph_username"),
                     "password": os.getenv("memgraph_password")
-                }
+                },
+                "custom_prompt": graph_story_zh
             },
             # "history_db_path": "./.mem0/history.db"
         }
@@ -273,12 +277,16 @@ class Mem0:
                 cleaned = cleaned.replace(char, '_')
             # 移除多余的下划线
             cleaned = '_'.join(filter(None, cleaned.split('_')))
+            # 确保不以特殊字符开头或结尾
+            cleaned = cleaned.strip('_')
             return cleaned
             
         # 处理可能包含关系名称的模式
         # 这里处理常见的模式，如表格中的表头或结构化数据中的关系标识
-        content = re.sub(r'[^\s]{1,50}/[^\s]{1,50}', clean_relationship_name, content)
-        content = re.sub(r'[^\s]{1,50}:[^\s]{1,50}', clean_relationship_name, content)
+        # 匹配包含特殊字符的词组（1-50个非空白字符）
+        content = re.sub(r'[^\s]{1,50}[/:\-\.]{1,2}[^\s]{1,50}', clean_relationship_name, content)
+        # 匹配单个包含特殊字符的词（如"目标/"、"/开头"）
+        content = re.sub(r'[^\s]{0,50}[/:\-\.]{1}[^\s]{0,50}', clean_relationship_name, content)
         
         return content
 
