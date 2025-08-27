@@ -137,9 +137,6 @@ class Mem0:
 
                         'openrouter/deepseek/deepseek-chat-v3-0324:free',
 
-                        # 'openrouter/meta-llama/llama-3.2-3b-instruct', 
-                        # 'openrouter/liquid/lfm-7b', 
-                        # 'openrouter/meta-llama/llama-3.1-8b-instruct', 
                         # 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b', 
                     ]
                 }
