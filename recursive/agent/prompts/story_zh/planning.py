@@ -5,7 +5,6 @@ from recursive.agent.prompts.base import prompt_register
 
 """
 审查 `planning.py` ， 生成的分解任务，全都省略了很多要素。但是不能省略，只能多不能少，llm在偷懒，而且是明显违反了提示词的要求啊。
-请你分析下这个问题，帮我改进。
 要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
 
 

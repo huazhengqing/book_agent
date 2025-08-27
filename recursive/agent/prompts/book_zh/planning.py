@@ -5,7 +5,6 @@ from recursive.agent.prompts.base import prompt_register
 
 """
 请整体评估 `planning.py` 的提示词，并指出其最大的优势和可以进一步强化的方向。
-我希望llm可能尽可能的分解出更多的子任务。因为llm会偷懒，帮我解决这个问题。
 要求：清晰、精确、易于理解，在保持质量的同时，尽可能简洁，不要有各种“黑话”和比喻，最好以关键词为主
 
 
