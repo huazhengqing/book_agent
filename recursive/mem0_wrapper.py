@@ -21,6 +21,14 @@ from recursive.agent.prompts.report_zh.mem import (
     mem_report_text_queries_zh_system,
     mem_report_text_queries_zh_user
 )
+from recursive.agent.prompts.book_zh.mem import (
+    mem_book_fact_zh,
+    mem_book_update_zh,
+    mem_book_design_queries_zh_system,
+    mem_book_design_queries_zh_user,
+    mem_book_text_queries_zh_system,
+    mem_book_text_queries_zh_user
+)
 import diskcache
 import hashlib
 from datetime import datetime

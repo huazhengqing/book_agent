@@ -28,6 +28,7 @@ recursive.egg-info/
 recursive/.litellm_cache/
 recursive/.mem0/
 recursive/.cache/
+searxng/
 *.pyc
 *.log
 *.md

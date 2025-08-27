@@ -30,5 +30,5 @@ docker ps -a | grep qdrant
 
 
 source ../venv/bin/activate
-python3 engine.py --filename $task_input_file --output-filename $task_output_file --done-flag-file $done_file --mode book --language zh >> run_book.log 2>&1
+python3 engine.py --filename $task_input_file --output-filename $task_output_file --done-flag-file $done_file --mode book --engine-backend searxng --language zh >> run_book.log 2>&1
 
