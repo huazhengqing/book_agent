@@ -64,7 +64,7 @@ class LiteLLMProxy:
             'max_tokens': 131072,
             'max_completion_tokens': 131072,
             'timeout': 900,
-            'num_retries': 2,
+            'num_retries': 5,
             'respect_retry_after': True,
             'fallbacks': [
                 'openai/deepseek-ai/DeepSeek-R1-0528'
@@ -91,7 +91,7 @@ class LiteLLMProxy:
             'max_tokens': 131072,
             'max_completion_tokens': 131072,
             'timeout': 300,
-            'num_retries': 2,
+            'num_retries': 5,
             'respect_retry_after': True,
             'fallbacks': [
                 # 'openai/deepseek-ai/DeepSeek-V3',
@@ -120,7 +120,7 @@ class LiteLLMProxy:
             'max_tokens': 131072,
             'max_completion_tokens': 131072,
             'timeout': 300,
-            'num_retries': 2,
+            'num_retries': 5,
             'respect_retry_after': True,
             'fallbacks': [
                 # 'openai/deepseek-ai/DeepSeek-V3',

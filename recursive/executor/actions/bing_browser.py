@@ -21,6 +21,7 @@ import concurrent.futures
 from loguru import logger
 from charset_normalizer import detect
 from dotenv import load_dotenv
+from duckduckgo_search import DDGS
 
 load_dotenv(dotenv_path='api_key.env')
 
@@ -593,7 +594,7 @@ class BingBrowser(BaseAction):
         ori_urls = [res["url"] for res in pk_search_results]
         # fetch web page content
         # pk_search_results = self.__fetch(pk_search_results)
-        if self.searcher_type in ("SerpApiSearch", "SearXNG"):
+        if self.searcher_type in ("SerpApiSearch", "SearXNG", "DuckDuckGoSearch"):
             pk_search_results = self.__single_fetch(pk_search_results)
         else:
             raise Exception()
@@ -728,6 +729,83 @@ class SearXNG(BaseSearch):
             if idx > self.topk:
                 break
         return {i: p for i, p in enumerate(pages)}
+
+    def fetch_content(
+        self, pages: List[dict]
+    ) -> List[dict]:
+        urls = [page["url"] for page in pages]
+        valid_url_to_snippets = self.webpage_helper.urls_to_snippets(urls)
+        fetched_pages = []
+        for page in pages:
+            url = page["url"]
+            if url not in valid_url_to_snippets:
+                continue
+            page["snippet"] = page["description"]
+            del page["description"]
+            long_res = "Snippet: {}\nContent: {}".format(
+                page["snippet"], valid_url_to_snippets[url]["text"]
+            )
+            page["content"] = long_res
+            fetched_pages.append(page)
+        return fetched_pages
+
+
+class DuckDuckGoSearch(BaseSearch):
+    def __init__(
+        self,
+        topk: int = 3,
+        is_valid_source = None,
+        min_char_count: int = 150,
+        snippet_chunk_size: int = 1000,
+        webpage_helper_max_threads: int = 10,
+        **kwargs
+    ):
+        super().__init__(topk=topk, black_list=[])
+        self.usage = 0
+        self.is_valid_source = is_valid_source or (lambda x: True)
+        self.webpage_helper = WebPageHelper(
+            min_char_count=min_char_count,
+            snippet_chunk_size=snippet_chunk_size,
+            max_thread_num=webpage_helper_max_threads,
+        )
+        self.ddgs = DDGS()
+
+    def get_usage_and_reset(self):
+        u = self.usage
+        self.usage = 0
+        return {"DuckDuckGoSearch": u}
+
+    def search(
+        self, query: str, exclude_urls: List[str] = [], overwrite_cache: bool = False
+    ) -> dict:
+        self.usage += 1
+        try:
+            results = self.ddgs.text(query, max_results=self.topk)
+            pages = []
+            idx = 1
+            for r in results:
+                url = r.get("href")
+                if (
+                    not url
+                    or not self.is_valid_source(url)
+                    or url.endswith(".pdf")
+                    or url in exclude_urls
+                ):
+                    continue
+                pages.append({
+                    "url": url, 
+                    "title": r.get("title", ""), 
+                    "description": r.get("body", ""), 
+                    "position": idx, 
+                    "publish_time": "Not Provided"
+                })
+                idx += 1
+                if idx > self.topk:
+                    break
+            return {i: p for i, p in enumerate(pages)}
+        except Exception as e:
+            logger.error(f"DuckDuckGo lookup failed for `{query}`: {e}")
+            return {}
 
     def fetch_content(
         self, pages: List[dict]
