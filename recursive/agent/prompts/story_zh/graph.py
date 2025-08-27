@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-
 """
+用这个文件替换以下文件：
+./venv/lib/python3.12/site-packages/mem0/graphs/utils.py
+
+
 #
 请分析审查以下的提示词：UPDATE_GRAPH_PROMPT、EXTRACT_RELATIONS_PROMPT、DELETE_RELATIONS_SYSTEM_PROMPT
 
@@ -161,4 +161,11 @@ DELETE_RELATIONS_SYSTEM_PROMPT = """
 # 输出要求
 提供一个需要删除的关系列表，每条指令需明确指定源实体、关系和目标实体。
 """
+
+
+def get_delete_messages(existing_memories_string, data, user_id):
+    return DELETE_RELATIONS_SYSTEM_PROMPT.replace(
+        "USER_ID", user_id
+    ), f"Here are the existing memories: {existing_memories_string} \n\n New Information: {data}"
+
 
