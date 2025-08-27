@@ -20,8 +20,10 @@ bak/
 tmp/
 docs/
 bug/
-test/cache/
-test/story/
+output/cache/
+output/story/
+output/report/
+output/book/
 node_modules/
 __pycache__/
 recursive.egg-info/

@@ -1,8 +1,8 @@
 #!/bin/bash
 
 
-task_input_file=../test/book.jsonl
-output_folder=../test/book/
+task_input_file=../output/book.jsonl
+output_folder=../output/book/
 mkdir -p ${output_folder}
 task_output_file=${output_folder}/output.jsonl
 done_file=${output_folder}/done.txt
@@ -17,8 +17,8 @@ rm -rf ./run_story.log
 rm -rf ../.litellm_cache
 rm -rf ../.mem0
 rm -rf ../.cache
-rm -rf ../test/log
-rm -rf ../test/book
+rm -rf ../output/log
+rm -rf ../output/book
 
 
 # docker-compose stop
