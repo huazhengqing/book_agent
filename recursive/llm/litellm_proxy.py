@@ -43,8 +43,9 @@ class LiteLLMProxy:
     def call_reasoning(self, messages=None, tools=None, temperature=None, **kwargs):
         messages = copy.deepcopy(messages)
         litellm_params = {
-            'model': 'openrouter/deepseek/deepseek-r1-0528:free',
             # 'model': 'openai/deepseek-ai/DeepSeek-R1-0528',
+            'model': 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b:free',
+            # 'model': 'openrouter/deepseek/deepseek-r1-0528:free',
             'messages': messages,
             'temperature': 0.2,
             'caching': True,
@@ -57,6 +58,7 @@ class LiteLLMProxy:
                 'openai/deepseek-ai/DeepSeek-R1-0528', 
 
                 # 'openrouter/deepseek/deepseek-r1-0528:free', 
+                # 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b:free', 
 
                 # 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b', 
                 # 'openrouter/qwen/qwen3-32b', 
@@ -78,8 +80,9 @@ class LiteLLMProxy:
     def call_fast_zh(self, messages, tools=None, temperature=None, **kwargs):
         messages = copy.deepcopy(messages)
         litellm_params = {
-            'model': 'openai/deepseek-ai/DeepSeek-V3',
+            # 'model': 'openai/deepseek-ai/DeepSeek-V3',
             # 'model': 'openrouter/deepseek/deepseek-chat-v3-0324:free',
+            'model': 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b:free',
             'messages': messages,
             'temperature': 0.0,
             'caching': True,
@@ -89,10 +92,9 @@ class LiteLLMProxy:
             'num_retries': 5,
             'respect_retry_after': True,
             'fallbacks': [
-                # 'openai/deepseek-ai/DeepSeek-V3',
-
-                'openrouter/deepseek/deepseek-chat-v3-0324:free',
-
+                'openai/deepseek-ai/DeepSeek-V3',
+                # 'openrouter/deepseek/deepseek-chat-v3-0324:free',
+                # 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b:free', 
                 # 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b', 
             ]
         }
@@ -110,8 +112,9 @@ class LiteLLMProxy:
     def call_fast_en(self, messages, tools=None, temperature=None, **kwargs):
         messages = copy.deepcopy(messages)
         litellm_params = {
-            'model': 'openai/deepseek-ai/DeepSeek-V3',
+            # 'model': 'openai/deepseek-ai/DeepSeek-V3',
             # 'model': 'openrouter/deepseek/deepseek-chat-v3-0324:free',
+            'model': 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b:free',
             'messages': messages,
             'temperature': 0.0,
             'caching': True,
@@ -121,10 +124,9 @@ class LiteLLMProxy:
             'num_retries': 5,
             'respect_retry_after': True,
             'fallbacks': [
-                # 'openai/deepseek-ai/DeepSeek-V3',
-
-                'openrouter/deepseek/deepseek-chat-v3-0324:free',
-
+                'openai/deepseek-ai/DeepSeek-V3',
+                # 'openrouter/deepseek/deepseek-chat-v3-0324:free',
+                # 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b:free', 
                 # 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b', 
             ]
         }

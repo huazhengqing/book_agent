@@ -29,9 +29,6 @@ from recursive.agent.prompts.book_zh.mem import (
     mem_book_text_queries_zh_system,
     mem_book_text_queries_zh_user
 )
-# from recursive.agent.prompts.story_zh.graph import (
-#     graph_story_zh
-# )
 import diskcache
 import hashlib
 from datetime import datetime
@@ -153,15 +150,14 @@ class Mem0:
                     "embedding_dims": int(os.getenv("embedding_dims"))
                 }
             },
-            "graph_store": {
-                "provider": "memgraph", 
-                "config": {
-                    "url": os.getenv("memgraph_url"),
-                    "username": os.getenv("memgraph_username"),
-                    "password": os.getenv("memgraph_password")
-                }
-                # "custom_prompt": graph_story_zh
-            },
+            # "graph_store": {
+            #     "provider": "memgraph", 
+            #     "config": {
+            #         "url": os.getenv("memgraph_url"),
+            #         "username": os.getenv("memgraph_username"),
+            #         "password": os.getenv("memgraph_password")
+            #     }
+            # },
             # "history_db_path": "./.mem0/history.db"
         }
         prompt_config = {
