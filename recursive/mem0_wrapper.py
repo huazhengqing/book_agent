@@ -150,14 +150,14 @@ class Mem0:
                     "embedding_dims": int(os.getenv("embedding_dims"))
                 }
             },
-            # "graph_store": {
-            #     "provider": "memgraph", 
-            #     "config": {
-            #         "url": os.getenv("memgraph_url"),
-            #         "username": os.getenv("memgraph_username"),
-            #         "password": os.getenv("memgraph_password")
-            #     }
-            # },
+            "graph_store": {
+                "provider": "memgraph", 
+                "config": {
+                    "url": os.getenv("memgraph_url"),
+                    "username": os.getenv("memgraph_username"),
+                    "password": os.getenv("memgraph_password")
+                }
+            },
             # "history_db_path": "./.mem0/history.db"
         }
         prompt_config = {
